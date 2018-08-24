@@ -1,21 +1,52 @@
 <template>
-	<header class="header">
-		<div class="header__title"> <span class="pair" v-if="pair">{{pair}}</span> <span class="icon-currency"></span> <span v-html="title"></span></div>
-		<button type="button" v-if="!isPopupMode" v-on:click="togglePopup" title="Open as popup" v-tippy="{placement: 'bottom'}"><span class="icon-external-link"></span></button>
-		<button type="button" v-if="canFetch" v-on:click="retrieveChart" v-bind:title="fetchLabel" v-tippy="{placement: 'bottom'}">
-			<svg class="loader" v-bind:class="{loading: dashoffset > 0}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14">
-				<path :stroke-dashoffset="dashoffset" d="M7,1a6.06,6.06,0,0,1,6,6,6.06,6.06,0,0,1-6,6A6.06,6.06,0,0,1,1,7,6.06,6.06,0,0,1,7,1Z"/>
-			</svg>
-			<span class="icon-history"></span>
-		</button>
-		<button type="button" v-on:click="toggleFollow" v-bind:title="following ? 'Stop live mode' : 'Go live mode'" v-tippy="{placement: 'bottom'}"><span class="icon-play" v-bind:class="{following: following}"></span></button>
-		<button type="button" v-on:click="$emit('settings')"><span class="icon-cog"></span></button>
-	</header>
+  <header class="header">
+    <div class="header__title">
+      <span class="pair" v-if="pair">{{ pair }}</span>
+      <span class="icon-currency"></span>
+      <span v-html="title"></span>
+    </div>
+
+    <button type="button"
+      v-if="!isPopupMode"
+      @click="togglePopup"
+      title="Open as popup"
+      v-tippy="{ placement: 'bottom' }"
+    ><span class="icon-external-link"></span></button>
+
+    <button type="button"
+      v-if="canFetch"
+      @click="retrieveChart"
+      :title="fetchLabel"
+      v-tippy="{ placement: 'bottom' }"
+    >
+      <svg class="loader"
+        :class="{ loading: dashoffset > 0 }"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 14 14"
+      >
+        <path
+          :stroke-dashoffset="dashoffset"
+          d="M7,1a6.06,6.06,0,0,1,6,6,6.06,6.06,0,0,1-6,6A6.06,6.06,0,0,1,1,7,6.06,6.06,0,0,1,7,1Z"
+        />
+      </svg>
+      <span class="icon-history"></span>
+    </button>
+
+    <button type="button"
+      @click="toggleFollow"
+      :title="following ? 'Stop live mode' : 'Go live mode'"
+      v-tippy="{ placement: 'bottom' }"
+    ><span class="icon-play" :class="{ following: following }"></span></button>
+
+    <button type="button"
+      @click="$emit('settings')"
+    ><span class="icon-cog"></span></button>
+  </header>
 </template>
 
 <script>
-import options from '../services/options';
-import socket from '../services/socket';
+import options from '../services/options'
+import socket from '../services/socket'
 
 export default {
   data() {
@@ -27,100 +58,105 @@ export default {
       following: true,
       isPopupMode: window.opener !== null,
       canFetch: false
-    };
+    }
   },
-  created() {
-    this._fetchLabel = this.fetchLabel.substr();
 
-    options.$on('following', state => (this.following = state));
+  created() {
+    this._fetchLabel = this.fetchLabel.substr()
+
+    options.$on('following', state => (this.following = state))
 
     socket.$on('pairing', (pair, canFetch) => {
-      this.pair = pair;
-      this.canFetch = canFetch;
-    });
+      this.pair = pair
+      this.canFetch = canFetch
+    })
 
     socket.$on('fetchProgress', event => {
       if (!event || isNaN(event.progress)) {
-        return;
+        return
       }
 
-      this.dashoffset = (1 - event.progress) * 40;
+      this.dashoffset = (1 - event.progress) * 40
       this.fetchLabel = !Math.floor(this.dashoffset)
         ? this._fetchLabel
-        : this.sizeOf(event.loaded);
-    });
+        : this.sizeOf(event.loaded)
+    })
 
     socket.$on('price', (price, direction) => {
       if (typeof price === 'number') {
-        this.title = formatPrice(price);
+        this.title = formatPrice(price)
 
         window.document.title = this.title
           .toString()
-          .replace(/<\/?[^>]+(>|$)/g, '');
+          .replace(/<\/?[^>]+(>|$)/g, '')
       }
 
       if (direction) {
-        let favicon = document.getElementById('favicon');
+        let favicon = document.getElementById('favicon')
 
         if (!favicon || favicon.getAttribute('direction') !== direction) {
           if (favicon) {
-            document.head.removeChild(favicon);
+            document.head.removeChild(favicon)
           }
 
-          favicon = document.createElement('link');
-          favicon.id = 'favicon';
-          favicon.rel = 'shortcut icon';
-          favicon.href = `static/${direction}.png`;
+          favicon = document.createElement('link')
+          favicon.id = 'favicon'
+          favicon.rel = 'shortcut icon'
+          favicon.href = `static/${direction}.png`
 
-          favicon.setAttribute('direction', direction);
+          favicon.setAttribute('direction', direction)
 
-          document.head.appendChild(favicon);
+          document.head.appendChild(favicon)
         }
       }
-    });
+    })
 
-    setTimeout(() => (this.created = true), 2000);
+    setTimeout(() => (this.created = true), 2000)
   },
+
   methods: {
     retrieveChart() {
       if (this.dashoffset) {
-        return;
+        return
       }
 
-      const interval = parseInt(window.prompt(`Fetch last 𝑥 minutes`, 60));
+      const interval = parseInt(window.prompt(`Fetch last 𝑥 minutes`, 60))
 
       if (interval > 1) {
         socket.fetchHistoricalData(interval).then(data => {
-          this.dashoffset = 0;
-          this.fetchLabel = this._fetchLabel;
-        });
+          this.dashoffset = 0
+          this.fetchLabel = this._fetchLabel
+        })
       }
     },
+
     toggleFollow() {
-      options.follow(!this.following);
+      options.follow(!this.following)
     },
+
     togglePopup() {
       window.open(
         window.location.href,
         'Hey hey hey',
         'toolbar=no,status=no,width=350,height=500'
-      );
+      )
 
       setTimeout(() => {
-        window.close();
-      }, 500);
+        window.close()
+      }, 500)
     },
+
     sizeOf(bytes) {
-      var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
 
-      if (bytes == 0) return '0 Byte';
+      if (bytes == 0) return '0 Byte'
 
-      var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+      var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)))
 
-      return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
+      return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i]
     }
   }
-};
+}
 </script>
 
 <style lang="scss">

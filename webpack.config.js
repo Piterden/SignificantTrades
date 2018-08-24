@@ -1,7 +1,9 @@
-var path = require('path')
-var webpack = require('webpack')
+const path = require('path')
+const webpack = require('webpack')
 
-module.exports = {
+const date = new Date();
+
+const webpackConfig = {
   entry: './src/index.js',
   output: {
     path: path.resolve(__dirname, './dist'),
@@ -73,7 +75,7 @@ module.exports = {
     alias: {
       'vue$': 'vue/dist/vue.esm.js'
     },
-    extensions: ['*', '.js', '.vue', '.json']
+    extensions: ['.js', '.vue', '.json']
   },
   devServer: {
     historyApiFallback: true,
@@ -83,26 +85,27 @@ module.exports = {
   performance: {
     hints: false
   },
-  devtool: '#eval-source-map'
+  devtool: process.env.NODE_ENV === 'production'
+    ? '#source-map'
+    : '#eval-source-map',
+  plugins: [
+    new webpack.DefinePlugin({
+      'process.env': {
+        NODE_ENV: process.env.NODE_ENV,
+        VERSION: require('./package.json').version,
+        BUILD_DATE: `${date.getDate()} ${date.toLocaleString(
+          'en',
+          { month: 'short' }
+        ).toLowerCase()}`,
+        PROXY_URL: process.env.PROXY_URL || 'https://cors.aggr.trade/',
+        API_URL: process.env.API_URL || 'https://api.aggr.trade',
+      }
+    }),
+  ],
 }
-var date = new Date();
-
-module.exports.plugins = (module.exports.plugins || []).concat([
-  new webpack.DefinePlugin({
-    'process.env': {
-      NODE_ENV: JSON.stringify(process.env.NODE_ENV),
-      VERSION: JSON.stringify(require("./package.json").version),
-      BUILD_DATE: JSON.stringify(date.getDate() + ' ' + date.toLocaleString('en-US', {month: 'short'}).toLowerCase()),
-      PROXY_URL: JSON.stringify(process.env.PROXY_URL || 'https://cors.aggr.trade/'),
-      API_URL: JSON.stringify(process.env.API_URL || 'https://api.aggr.trade'),
-    }
-  })
-]);
 
 if (process.env.NODE_ENV === 'production') {
-  module.exports.devtool = '#source-map'
-  // http://vue-loader.vuejs.org/en/workflow/production.html
-  module.exports.plugins = (module.exports.plugins || []).concat([
+  webpackConfig.plugins.push(
     new webpack.optimize.UglifyJsPlugin({
       sourceMap: false,
       mangle: {
@@ -111,9 +114,13 @@ if (process.env.NODE_ENV === 'production') {
       compress: {
         warnings: false
       }
-    }),
+    })
+  )
+  webpackConfig.plugins.push(
     new webpack.LoaderOptionsPlugin({
       minimize: true
     })
-  ])
+  )
 }
+
+module.exports = webpackConfig
