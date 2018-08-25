@@ -17,17 +17,17 @@
 </template>
 
 <script>
-import socket from '../services/socket'
-import options from '../services/options'
+  import socket from '../services/socket'
 
-export default {
+
+  export default {
   data: () => ({ alerts: [] }),
 
-  created () {
-    socket.$on('alert', (alert) => {
-      if (alert === 'clear') {
-        this.alerts.splice(0, this.alerts.length)
-        return
+    created () {
+      socket.$on('alert', alert => {
+        if (alert === 'clear') {
+          this.alerts.splice(0, this.alerts.length)
+          return
       }
 
       if (alert.id) {
@@ -38,10 +38,12 @@ export default {
           }
         }
       } else {
-        alert.id = Math.random().toString(36).substring(7)
+        alert.id = Math.random()
+          .toString(36)
+          .substring(7)
       }
 
-      alert.timestamp = +new Date()
+        alert.timestamp = +new Date()
 
       if (!alert.title) {
         alert.title = alert.message
@@ -54,17 +56,18 @@ export default {
       }
 
       if (alert.message) {
-        alert.message = alert.message.trim().replace(/\n/, '<br>')
+        alert.message = alert.message.trim()
+          .replace(/\n/, '<br>')
       }
 
-      this.alerts.push(alert)
+        this.alerts.push(alert)
 
-      if (alert.type !== 'error') {
+        if (alert.type !== 'error') {
         setTimeout(() => {
           this.dismiss(this.alerts.indexOf(alert))
-        }, 1000 * 30)
+        }, 1000 * 30);
       }
-    })
+      });
   },
 
   methods: {
@@ -73,18 +76,18 @@ export default {
     },
 
     alertClick(alert, index) {
-      return (e) => {
+      return e => {
         alert.click
           ? alert.click(alert) && this.dismiss(index)
-          : this.dismiss(index)
-      }
-    },
-  },
+          : this.dismiss(index);
+      };
+    }
+  }
 };
 </script>
 
 <style lang="scss">
-@import '../assets/sass/variables';
+  @import "../assets/sass/variables";
 
 .alerts {
   position: absolute;

@@ -48,8 +48,7 @@ const emitter = new Vue({
           if (param[1].indexOf('%') !== -1) {
             const factor = (parseFloat(param[1]) || 1) / 100
 
-            settings.thresholds = this.thresholds
-              .map((threshold) => +formatAmount(threshold * factor))
+            settings.thresholds = this.thresholds.map((threshold) => +formatAmount(threshold * factor))
           }
           else {
             const threshold = parseFloat(param[1])
@@ -123,7 +122,12 @@ const emitter = new Vue({
         case 'significantTradeThreshold':
         case 'hugeTradeThreshol':
         case 'rareTradeThreshol':
-          this.pairThresholds[this.pair] = [threshold[0], threshold[1], threshold[0], threshold[0]]
+          this.pairThresholds[this.pair] = [
+            threshold[0],
+            threshold[1],
+            threshold[0],
+            threshold[0],
+          ]
           break
       }
 
@@ -134,7 +138,8 @@ const emitter = new Vue({
       })
     },
     save () {
-      localStorage && localStorage.setItem('options', JSON.stringify(this.$data))
+      localStorage
+      && localStorage.setItem('options', JSON.stringify(this.$data))
     },
   },
 })

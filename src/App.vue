@@ -1,13 +1,13 @@
 <template>
-	<div id="app" :data-currency="currency" :data-commodity="commodity" :data-symbol="symbol" :data-pair="pair">
-		<Settings v-if="showSettings" @close="showSettings = false"/>
-		<div class="app-wrapper">
-			<Alerts/>
-			<Header @settings="showSettings = !showSettings"/>
-			<TradeChart/>
-			<TradeList/>
-		</div>
-	</div>
+  <div id="app" :data-currency="currency" :data-commodity="commodity" :data-symbol="symbol" :data-pair="pair">
+    <Settings v-if="showSettings" @close="showSettings = false"/>
+    <div class="app-wrapper">
+      <Alerts/>
+      <Header @settings="showSettings = !showSettings"/>
+      <TradeChart/>
+      <TradeList/>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -42,16 +42,17 @@
     return +price.toFixed(options.precision)
   }
 
-    const firstDigitIndex = price.toString().match(/[1-9]/)
+    const firstDigitIndex = price.toString()
+      .match(/[1-9]/)
 
   if (firstDigitIndex) {
     return +price.toFixed(
       Math.max(8 - price.toFixed().length, firstDigitIndex.index + 1)
-    )
+    );
   }
 
     return +price.toFixed(8 - price.toFixed().length)
-  }
+  };
 
 window.formatAmount = function(amount, precision) {
   if (amount >= 1000000) {
@@ -63,12 +64,12 @@ window.formatAmount = function(amount, precision) {
   }
 
   return amount
-}
+};
 
 window.pad = function(num, size) {
   var s = '000000000' + num
   return s.substr(s.length - size)
-}
+};
 
 export default {
   name: 'App',
@@ -89,11 +90,11 @@ export default {
       commodity: 'bitcoin',
       showSettings: false,
       showStatistics: false,
-    }
+    };
   },
 
   created() {
-    socket.$on('pairing', (pair) => {
+    socket.$on('pairing', pair => {
       this.pair = options.pair = pair
 
       this.updatePairCurrency(this.pair)
@@ -110,8 +111,8 @@ export default {
         type: 'error',
         title: 'Disable your AdBlocker',
         message: `Some adblockers may block access to exchanges api.
-Make sure to turn it off, there is no ads anyway :-)`,
-      })
+Make sure to turn it off, there is no ads anyway :-)`
+      });
     }
 
     socket.initialize()
@@ -125,8 +126,8 @@ Make sure to turn it off, there is no ads anyway :-)`,
         EUR: ['euro', '€'],
         USD: ['dollar', '$'],
         JPY: ['yen', '¥'],
-        ETH: ['ethereum', 'ETH']
-      }
+        ETH: ['ethereum', 'ETH'],
+      };
 
       this.currency = 'dollar'
       this.commodity = 'coin'
@@ -142,15 +143,15 @@ Make sure to turn it off, there is no ads anyway :-)`,
           this.commodity = symbols[symbol][0]
         }
       }
-    },
-  },
-}
+    }
+  }
+};
 </script>
 
 <style lang='scss'>
-@import './assets/sass/variables';
-@import './assets/sass/basic';
-@import './assets/sass/icons';
+  @import "./assets/sass/variables";
+  @import "./assets/sass/basic";
+  @import "./assets/sass/icons";
 
 .icon-commodity,
 .icon-currency {

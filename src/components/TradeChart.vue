@@ -1,22 +1,25 @@
 <template>
 	<div>
-		<div class="chart__container" ref="chartContainer" v-bind:class="{fetching: fetching}" v-on:mousedown="startScroll">
+		<div class="chart__container" ref="chartContainer" v-bind:class="{fetching: fetching}"
+			 v-on:mousedown="startScroll">
 			<div class="chart__range">
 				<div>{{ rangeFrom }}</div>
 				<div>{{ rangeTo }}</div>
 			</div>
 			<div class="chart__canvas"></div>
 		</div>
-		<div class="chart__height-handler" ref="chartHeightHandler" v-on:mousedown="startResize" v-on:dblclick.stop.prevent="resetHeight"></div>
+		<div class="chart__height-handler" ref="chartHeightHandler" v-on:mousedown="startResize"
+			 v-on:dblclick.stop.prevent="resetHeight"></div>
 	</div>
 </template>
 
 <script>
-import Highcharts from 'highcharts';
-import options from '../services/options';
-import socket from '../services/socket';
+  import Highcharts from 'highcharts'
+  import options from '../services/options'
+  import socket from '../services/socket'
 
-export default {
+
+  export default {
   data() {
     return {
       fetching: false,
@@ -41,7 +44,7 @@ export default {
       );
     }
 
-    Highcharts.wrap(Highcharts.Series.prototype, 'drawGraph', function(
+    Highcharts.wrap(Highcharts.Series.prototype, 'drawGraph', function (
       proceed
     ) {
       var lineWidth;
@@ -49,14 +52,14 @@ export default {
       proceed.call(this);
 
       if (this.graph) {
-        lineWidth = this.graph.attr('stroke-width');
+        lineWidth = this.graph.attr('stroke-width')
         if (
           /Chrome/.test(navigator.userAgent) &&
           lineWidth >= 2 &&
           lineWidth <= 6 &&
           this.graph.attr('stroke-linecap') === 'round'
         ) {
-          this.graph.attr('stroke-linecap', 'square');
+          this.graph.attr('stroke-linecap', 'square')
         }
       }
     });
@@ -67,16 +70,16 @@ export default {
       }
     });
 
-    socket.$on('pairing', this.onPairing);
+    socket.$on('pairing', this.onPairing)
 
-    socket.$on('historical', this.onFetch);
+    socket.$on('historical', this.onFetch)
 
-    socket.$on('trades', this.onTrades);
+    socket.$on('trades', this.onTrades)
 
-    options.$on('follow', this.onFollow);
+    options.$on('follow', this.onFollow)
 
     setTimeout(() => {
-      options.$on('change', this.onSettings);
+      options.$on('change', this.onSettings)
     }, 1000);
 
     this.chart = window.chart = Highcharts.chart(
@@ -92,8 +95,8 @@ export default {
           events: {
             redraw: () => {
               if (!this.chart.xAxis[0].min || !this.chart.xAxis[0].max) {
-                this.rangeFrom = '';
-                this.rangeTo = '';
+                this.rangeFrom = ''
+                this.rangeTo = ''
                 return;
               }
 
@@ -115,7 +118,7 @@ export default {
         subtitle: {
           text: '',
           style: {
-            display: 'none'
+            display: 'none',
           }
         },
         rangeSelector: {
@@ -173,16 +176,16 @@ export default {
             return this.point.name
               ? this.point.name
               : '<small>' +
-                  Highcharts.dateFormat('%H:%M:%S', this.point.x) +
-                  '</small><br>' +
+              Highcharts.dateFormat('%H:%M:%S', this.point.x) +
+              '</small><br>' +
                   this.series.name +
-                  ' ' +
-                  app.getAttribute('data-symbol') +
-                  (this.series.name === 'BUY' || this.series.name === 'SELL'
+              ' ' +
+              app.getAttribute('data-symbol') +
+              (this.series.name === 'BUY' || this.series.name === 'SELL'
                     ? formatAmount(this.y)
                     : formatPrice(this.y)
                         .toString()
-                        .replace(/(\d)(?=(\d{3})+\.)/g, '$1,'));
+                  .replace(/(\d)(?=(\d{3})+\.)/g, '$1,'));
           },
           style: {
             color: 'white',
@@ -202,7 +205,7 @@ export default {
             }
           },
           area: {
-            stacking: 'normal'
+            stacking: 'normal',
           },
           spline: {
             animation: false,
@@ -239,7 +242,7 @@ export default {
               linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
               stops: [
                 [0, 'rgba(244, 67, 54, .8)'],
-                [1, 'rgba(244, 67, 54, .6)']
+                [1, 'rgba(244, 67, 54, .6)'],
               ]
             },
             animation: false,
@@ -258,7 +261,7 @@ export default {
               linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
               stops: [
                 [0, 'rgba(124, 167, 78, .8)'],
-                [1, 'rgba(124, 167, 78, .6)']
+                [1, 'rgba(124, 167, 78, .6)'],
               ]
             },
             animation: false,
@@ -303,37 +306,37 @@ export default {
 
     this._onResize = this.onResize.bind(this);
 
-    window.addEventListener('resize', this._onResize);
+    window.addEventListener('resize', this._onResize)
 
     this._doZoom = this.doZoom.bind(this);
 
-    this.$refs.chartContainer.addEventListener('wheel', this._doZoom);
+    this.$refs.chartContainer.addEventListener('wheel', this._doZoom)
 
     this._doDrag = this.doDrag.bind(this);
 
-    window.addEventListener('mousemove', this._doDrag, false);
+    window.addEventListener('mousemove', this._doDrag, false)
 
     this._stopDrag = this.stopDrag.bind(this);
 
-    window.addEventListener('mouseup', this._stopDrag, false);
-    window.addEventListener('keyup', this._shiftTracker, false);
-    window.addEventListener('blur', this._shiftTracker, false);
+    window.addEventListener('mouseup', this._stopDrag, false)
+    window.addEventListener('keyup', this._shiftTracker, false)
+    window.addEventListener('blur', this._shiftTracker, false)
   },
   beforeDestroy() {
-    socket.$off('trades', this.onTrades);
-    socket.$off('historical', this.onFetch);
-    socket.$off('pairing', this.onPairing);
-    options.$off('change', this.onSettings);
-    options.$off('follow', this.onFollow);
+    socket.$off('trades', this.onTrades)
+    socket.$off('historical', this.onFetch)
+    socket.$off('pairing', this.onPairing)
+    options.$off('change', this.onSettings)
+    options.$off('follow', this.onFollow)
 
     clearTimeout(this._zoomAfterTimeout);
     clearInterval(this._trimInvisibleTradesInterval);
 
-    this.$refs.chartContainer.removeEventListener('wheel', this._doZoom);
+    this.$refs.chartContainer.removeEventListener('wheel', this._doZoom)
 
-    window.removeEventListener('resize', this._onResize);
-    window.removeEventListener('mousemove', this._doScroll);
-    window.removeEventListener('mouseup', this._stopScroll);
+    window.removeEventListener('resize', this._onResize)
+    window.removeEventListener('mousemove', this._doScroll)
+    window.removeEventListener('mouseup', this._stopScroll)
   },
   methods: {
     //                        _ _
@@ -558,7 +561,7 @@ export default {
 
       const range = this.chart.xAxis[0].max - this.chart.xAxis[0].min;
       const scale =
-        range / this.chart.chartWidth * (this.scrolling - event.pageX);
+        (range / this.chart.chartWidth) * (this.scrolling - event.pageX);
 
       let axisMin = this.chart.xAxis[0].min;
       let axisMax = this.chart.xAxis[0].max;
@@ -644,11 +647,7 @@ export default {
       const h = document.documentElement.clientHeight || innerHeight;
 
       if (options.height > 0) {
-        this.chart.setSize(
-          w,
-          options.height,
-          false
-        );
+        this.chart.setSize(w, options.height, false)
       } else {
         this.chart.setSize(
           w,
@@ -698,7 +697,7 @@ export default {
                     )}${app.getAttribute('data-symbol')} liquidated <b>${
                       data[i][4] == 1 ? 'SHORT' : 'LONG'
                     }</b>`,
-                    '#E91E63'
+                    '#E91E63',
                   )
                 );
               break;
@@ -748,7 +747,7 @@ export default {
         this.tick.exchanges[data[i][0]].close = +data[i][2];
         this.tick.exchanges[data[i][0]].size += +data[i][3];
         this.tick.size += +data[i][3];
-        this.tick[data[i][4] > 0 ? 'buys' : 'sells'] += data[i][3] * data[i][2];
+        this.tick[data[i][4] > 0 ? 'buys' : 'sells'] += data[i][3] * data[i][2]
 
         if (
           options.showPlotsSignificants &&
@@ -771,7 +770,7 @@ export default {
 
       if (getPriceIndex) {
         /* simple weight average price over exchanges
-					*/
+		 */
 
         const closes = [];
 
@@ -801,11 +800,11 @@ export default {
         }
 
         /* get period typical price
-					*/
+		 */
         typical = (tick.high + tick.low + tick.close) / 3;
 
         /* average the price
-					*/
+		 */
         const cumulatives = this.averages.concat([
           [typical, tick.buys + tick.sells]
         ]);
@@ -825,17 +824,17 @@ export default {
         }
 
         /* determine tab lagging indicator
-					*/
+		 */
         const lastPrices = this.chart.series[0].yData.slice(-5);
         let direction =
           lastPrices.length > 2
             ? this.priceIndex >
               lastPrices.reduce((a, b) => a + b) / lastPrices.length
-              ? 'up'
-              : 'down'
+            ? 'up'
+            : 'down'
             : 'neutral';
 
-        socket.$emit('price', this.priceIndex, direction);
+        socket.$emit('price', this.priceIndex, direction)
       }
 
       return {
@@ -851,9 +850,10 @@ export default {
         `${trade[4] == 1 ? 'Buy' : 'Sell'} ${formatAmount(
           trade[2] * trade[3]
         )}${app.getAttribute('data-symbol')} @ ${app.getAttribute(
-          'data-symbol'
-        )}${formatPrice(trade[2]).replace(/(\d)(?=(\d{3})+\.)/g, '$1,')}`;
-      let fill = color || (trade[4] == 1 ? '#7ca74e' : '#F44336');
+          'data-symbol',
+        )}${formatPrice(trade[2])
+          .replace(/(\d)(?=(\d{3})+\.)/g, '$1,')}`;
+      let fill = color || (trade[4] == 1 ? '#7ca74e' : '#F44336')
 
       return {
         x: +trade[1],
@@ -863,14 +863,15 @@ export default {
             5,
             Math.log(
               1 +
-                trade[2] *
-                  trade[3] /
+              (trade[2] * trade[3]) /
                   (options.thresholds[2] - options.thresholds[0])
             ) * 6
           ),
           symbol: trade[5]
             ? 'diamond'
-            : trade[4] == 1 ? 'triangle' : 'triangle-down',
+            : trade[4] == 1
+              ? 'triangle'
+              : 'triangle-down',
           fillColor: fill
         },
         name: label
@@ -989,12 +990,14 @@ export default {
       let value = parseFloat(options.timeframe);
       let type = /\%$/.test(options.timeframe)
         ? 'percent'
-        : /\px$/i.test(options.timeframe) ? 'width' : 'time';
+        : /\px$/i.test(options.timeframe)
+          ? 'width'
+          : 'time';
       let output;
 
       if (!value) {
         value = 1.5;
-        type = 'percent';
+        type = 'percent'
       }
 
       if (type === 'percent') {
@@ -1004,8 +1007,9 @@ export default {
           output;
         }
         output = this.range * value;
-      } else if (type === 'width') {
-        output = value / this.chart.chartWidth * this.range;
+      }
+      else if (type === 'width') {
+        output = (value / this.chart.chartWidth) * this.range
       } else {
         output = value * 1000;
       }
@@ -1067,20 +1071,20 @@ export default {
       if (this.following !== state) {
         this.timestamp = +new Date();
 
-        options.$emit('following', state);
+        options.$emit('following', state)
 
         this.following = state;
       }
     },
 
     toggleDark(state) {
-      window.document.body.classList[state ? 'add' : 'remove']('dark');
+      window.document.body.classList[state ? 'add' : 'remove']('dark')
 
       this.chart.series[0].update({
         color: state ? '#fff' : '#222',
         shadow: state
           ? {
-              color: 'rgba(255, 255, 255, .1)',
+            color: 'rgba(255, 255, 255, .1)',
               width: 15,
               offsetX: 0,
               offsetY: 0
@@ -1091,7 +1095,7 @@ export default {
       this.chart.series[3].update({
         shadow: state
           ? {
-              color: 'rgba(255, 255, 255, .1)',
+            color: 'rgba(255, 255, 255, .1)',
               width: 15,
               offsetX: 0,
               offsetY: 0
@@ -1100,7 +1104,7 @@ export default {
       });
 
       this.chart.yAxis[0].update({
-        gridLineColor: state ? 'rgba(255, 255, 255, .1)' : 'rgba(0, 0, 0, .05)'
+        gridLineColor: state ? 'rgba(255, 255, 255, .1)' : 'rgba(0, 0, 0, .05)',
       });
     }
   }
@@ -1108,7 +1112,7 @@ export default {
 </script>
 
 <style lang='scss'>
-@import '../assets/sass/variables';
+	@import "../assets/sass/variables";
 
 .chart__range {
   display: flex;

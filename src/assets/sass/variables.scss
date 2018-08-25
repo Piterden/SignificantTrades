@@ -1,11 +1,11 @@
-$green: #43A047;
-$red: #F44336;
-$blue: #2196F3;
+$green: #43a047;
+$red: #f44336;
+$blue: #2196f3;
 $orange: #fbc02d;
 $dark: #171b29;
-$pink: #E91E63;
+$pink: #e91e63;
 
-$easeOutExpo: cubic-bezier(0.005, 1.000, 0.220, 1.000);
+$easeOutExpo: cubic-bezier(0.005, 1, 0.22, 1);
 $easeElastic: cubic-bezier(0, 1.4, 1, 1);
 
 $icon-bitcoin: \e900;
@@ -40,5 +40,5 @@ $icon-invisible: \e91d;
 $icon-visible: \e91c;
 
 @function unicode($str) {
-  @return unquote("\"") + $str + unquote("\"");
+  @return unquote('"') + $str + unquote('"');
 }

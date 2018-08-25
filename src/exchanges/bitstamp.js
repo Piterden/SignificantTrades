@@ -21,11 +21,14 @@ class Bitstamp extends Exchange {
       return false
     }
 
-    this.options = Object.assign({
-      appId: 'de504dc5763aeef9ff52',
-      channel: 'live_trades',
-      bind: 'trade',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        appId: 'de504dc5763aeef9ff52',
+        channel: 'live_trades',
+        bind: 'trade',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -54,26 +57,28 @@ class Bitstamp extends Exchange {
   }
 
   formatLiveTrades (trade) {
-    return [[
-      this.id,
-      +new Date(trade.timestamp * 1000),
-      trade.price,
-      trade.amount,
-      trade.type === 0 ? 1 : 0,
-    ]]
+    return [
+      [
+        this.id,
+        +new Date(trade.timestamp * 1000),
+        trade.price,
+        trade.amount,
+        trade.type === 0 ? 1 : 0,
+      ],
+    ]
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.length) {
-			return response.map(trade => [
-				this.id,
-				trade.date * 1000,
-				+trade.price,
-				+trade.amount,
-				trade.type === '1' ? 1 : 0
-			]);
-		}
-	} */
+   if (response && response.length) {
+   return response.map(trade => [
+   this.id,
+   trade.date * 1000,
+   +trade.price,
+   +trade.amount,
+   trade.type === '1' ? 1 : 0
+   ]);
+   }
+   } */
 
   formatASSETS (data) {
     return data.map((a) => a.name.replace('/', ''))

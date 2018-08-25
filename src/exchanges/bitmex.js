@@ -9,12 +9,19 @@ class Bitmex extends Exchange {
 
     this.endpoints = {
       ASSETS: 'https://www.bitmex.com/api/v1/instrument/active',
-      TRADES: () => `https://www.bitmex.com/api/v1/trade?symbol=${this.pair}&reverse=true&count=500`,
+      TRADES: () => `https://www.bitmex.com/api/v1/trade?symbol=${
+        this.pair
+        }&reverse=true&count=500`,
     }
 
-    this.options = Object.assign({
-      url: () => `wss://www.bitmex.com/realtime?subscribe=trade:${this.pair},liquidation:${this.pair}`,
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: () => `wss://www.bitmex.com/realtime?subscribe=trade:${
+          this.pair
+          },liquidation:${this.pair}`,
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -67,16 +74,16 @@ class Bitmex extends Exchange {
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.length) {
-			return response.reverse().map(trade => [
-				this.id,
-				+new Date(trade.timestamp),
-				trade.price,
-				trade.size / trade.price,
-				trade.side === 'Buy' ? 1 : 0
-			])
-		}
-	} */
+   if (response && response.length) {
+   return response.reverse().map(trade => [
+   this.id,
+   +new Date(trade.timestamp),
+   trade.price,
+   trade.size / trade.price,
+   trade.side === 'Buy' ? 1 : 0
+   ])
+   }
+   } */
 
   formatASSETS (data) {
     const output = {}

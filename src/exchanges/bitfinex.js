@@ -20,9 +20,12 @@ class Bitfinex extends Exchange {
       return false
     }
 
-    this.options = Object.assign({
-      url: 'wss://api.bitfinex.com/ws/2',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: 'wss://api.bitfinex.com/ws/2',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -64,28 +67,30 @@ class Bitfinex extends Exchange {
       return
     }
 
-    return [[
-      this.id,
-      +new Date(json[2][1]),
-      +json[2][3],
-      Math.abs(json[2][2]),
-      json[2][2] < 0 ? 0 : 1,
-    ]]
+    return [
+      [
+        this.id,
+        +new Date(json[2][1]),
+        +json[2][3],
+        Math.abs(json[2][2]),
+        json[2][2] < 0 ? 0 : 1,
+      ],
+    ]
   }
 
   /* formatRecentsTrades(response) {
-		if (!response || !response.length) {
-			return;
-		}
+   if (!response || !response.length) {
+   return;
+   }
 
-		return response.map(trade => [
-			this.id,
-			trade[1],
-			trade[3],
-			Math.abs(trade[2]),
-			trade[2] > 0 ? 1 : 0,
-		]);
-	} */
+   return response.map(trade => [
+   this.id,
+   trade[1],
+   trade[3],
+   Math.abs(trade[2]),
+   trade[2] > 0 ? 1 : 0,
+   ]);
+   } */
 
   formatASSETS (data) {
     return data.map((a) => a.toUpperCase())

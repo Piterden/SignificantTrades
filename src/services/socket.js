@@ -71,8 +71,7 @@ const emitter = new Vue({
 
           this.timestamps[exchange.id] = +new Date()
 
-          data = data
-            .sort((a, b) => a[1] - b[1])
+          data = data.sort((a, b) => a[1] - b[1])
 
           if (this.delayed) {
             for (let i = 0; i < data.length; i++) {
@@ -104,7 +103,10 @@ const emitter = new Vue({
 
           this.$emit('connected', this.connected)
 
-          if (exchange.shouldBeConnected && options.disabled.indexOf(exchange) === -1) {
+          if (
+            exchange.shouldBeConnected
+            && options.disabled.indexOf(exchange) === -1
+          ) {
             exchange.reconnect(options.pair)
           }
         })
@@ -137,7 +139,10 @@ const emitter = new Vue({
 
         this.trades = this.trades.concat(this.queue)
 
-        this.$emit('trades', this.queue.filter((a) => options.filters.indexOf(a[0]) === -1))
+        this.$emit(
+          'trades',
+          this.queue.filter((a) => options.filters.indexOf(a[0]) === -1),
+        )
 
         this.queue = []
       }, 200)
@@ -182,7 +187,9 @@ const emitter = new Vue({
 
         validExchanges = validExchanges.filter((exchange) => options.disabled.indexOf(exchange.id) === -1)
 
-        console.log(`[socket.connect] ${validExchanges.length} successfully matched with "${options.pair}"`)
+        console.log(`[socket.connect] ${
+          validExchanges.length
+          } successfully matched with "${options.pair}"`)
 
         if (this.canFetch()) {
           this.$emit('alert', {
@@ -245,9 +252,14 @@ const emitter = new Vue({
         return Promise.resolve()
       }
 
-      console.log(`[socket.fetch] retrieve ${(to ? (to - from) / 1000 / 60 : from).toFixed(2)} minute(s) of trades`)
+      console.log(`[socket.fetch] retrieve ${(to
+          ? (to - from) / 1000 / 60
+          : from
+      ).toFixed(2)} minute(s) of trades`)
 
-      const url = `${process.env.API_URL ? process.env.API_URL : ''}/history/${parseInt(from)}${to ? `/${parseInt(to)}` : ''}`
+      const url = `${
+        process.env.API_URL ? process.env.API_URL : ''
+        }/history/${parseInt(from)}${to ? `/${parseInt(to)}` : ''}`
 
       if (this.lastFetchUrl === url) {
         return Promise.resolve()
@@ -296,10 +308,14 @@ const emitter = new Vue({
             resolve(trades)
           })
           .catch((err) => {
-            err && this.$emit('alert', {
+            err
+            && this.$emit('alert', {
               type: 'error',
               title: 'Unable to retrieve history',
-              message: err.response && err.response.data && err.response.data.error ? err.response.data.error : err.message,
+              message:
+                err.response && err.response.data && err.response.data.error
+                  ? err.response.data.error
+                  : err.message,
               id: 'fetch_error',
             })
 

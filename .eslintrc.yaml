@@ -1,6 +1,9 @@
-extends: '@atomix/eslint-config'
+extends: "@atomix/eslint-config"
 parser: babel-eslint
 rules:
+  indent:
+  - error
+  - 2
   no-console: 0
   unicorn/filename-case: 0
   space-before-function-paren:

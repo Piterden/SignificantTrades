@@ -45,10 +45,11 @@
 </template>
 
 <script>
-import options from '../services/options'
-import socket from '../services/socket'
+  import options from '../services/options'
+  import socket from '../services/socket'
 
-export default {
+
+  export default {
   data() {
     return {
       title: 'SignificantTrades',
@@ -58,7 +59,7 @@ export default {
       following: true,
       isPopupMode: window.opener !== null,
       canFetch: false
-    }
+    };
   },
 
   created() {
@@ -79,8 +80,8 @@ export default {
       this.dashoffset = (1 - event.progress) * 40
       this.fetchLabel = !Math.floor(this.dashoffset)
         ? this._fetchLabel
-        : this.sizeOf(event.loaded)
-    })
+        : this.sizeOf(event.loaded);
+    });
 
     socket.$on('price', (price, direction) => {
       if (typeof price === 'number') {
@@ -88,7 +89,7 @@ export default {
 
         window.document.title = this.title
           .toString()
-          .replace(/<\/?[^>]+(>|$)/g, '')
+          .replace(/<\/?[^>]+(>|$)/g, '');
       }
 
       if (direction) {
@@ -109,7 +110,7 @@ export default {
           document.head.appendChild(favicon)
         }
       }
-    })
+    });
 
     setTimeout(() => (this.created = true), 2000)
   },
@@ -126,7 +127,7 @@ export default {
         socket.fetchHistoricalData(interval).then(data => {
           this.dashoffset = 0
           this.fetchLabel = this._fetchLabel
-        })
+        });
       }
     },
 
@@ -138,12 +139,12 @@ export default {
       window.open(
         window.location.href,
         'Hey hey hey',
-        'toolbar=no,status=no,width=350,height=500'
-      )
+        'toolbar=no,status=no,width=350,height=500',
+      );
 
       setTimeout(() => {
         window.close()
-      }, 500)
+      }, 500);
     },
 
     sizeOf(bytes) {
@@ -156,7 +157,7 @@ export default {
       return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i]
     }
   }
-}
+  };
 </script>
 
 <style lang="scss">
@@ -173,7 +174,7 @@ header.header {
     padding: 10px;
 
     .pair {
-      opacity: .5;
+        opacity: 0.5;
     }
 
     sup {

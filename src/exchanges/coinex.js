@@ -22,9 +22,12 @@ class Coinex extends Exchange {
       return false
     }
 
-    this.options = Object.assign({
-      url: () => 'wss://socket.coinex.com/',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: () => 'wss://socket.coinex.com/',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -63,7 +66,12 @@ class Coinex extends Exchange {
   }
 
   formatLiveTrades (json) {
-    if (json.method === 'deals.update' && json.params && json.params.length && json.params[0] === this.pair) {
+    if (
+      json.method === 'deals.update'
+      && json.params
+      && json.params.length
+      && json.params[0] === this.pair
+    ) {
       if (this.skip) {
         this.skip = false
         return false
@@ -82,16 +90,16 @@ class Coinex extends Exchange {
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.data && response.data.length) {
-			return response.data.map(trade => [
-				this.id,
-				+trade.date_ms,
-				+trade.price,
-				+trade.amount,
-				trade.type === 'buy' ? 1 : 0
-			])
-		}
-	} */
+   if (response && response.data && response.data.length) {
+   return response.data.map(trade => [
+   this.id,
+   +trade.date_ms,
+   +trade.price,
+   +trade.amount,
+   trade.type === 'buy' ? 1 : 0
+   ])
+   }
+   } */
 
   formatASSETS (response) {
     if (!response || !response.data || !response.data.length) {

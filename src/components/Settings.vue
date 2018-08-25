@@ -1,5 +1,5 @@
 <template>
-	<div class="settings__container stack__container" v-on:click="$event.target === $el && $emit('close')">
+    <div class="settings__container stack__container" v-on:click="$event.target === $el && $emit('close')">
     <div class="stack__backdrop"></div>
     <div class="stack__scroller">
       <a href="https://github.com/Tucsky/SignificantTrades/issues" target="_blank" class="settings__report"><i class="icon-warning"></i> Found a bug or feedback ? Let me know on Github !</a>
@@ -28,7 +28,9 @@
         <div class="settings__thresholds">
           <div class="form-group mb8">
             <label v-for="(threshold, index) in options.thresholds" :key="`threshold-${index}`">
-              <span>Trades </span>&lt; <i class="icon-currency"></i> <editable :content="options.thresholds[index]" @output="$set(options.thresholds, index, $event)"></editable> 
+                <span>Trades </span>&lt; <i class="icon-currency"></i>
+                <editable :content="options.thresholds[index]"
+                          @output="$set(options.thresholds, index, $event)"></editable>
                 <span v-if="index === 0">won't show up</span>
                 <span v-if="index === 1">will be highlighted</span>
                 <span v-if="index > 1">
@@ -150,14 +152,15 @@
         </div>
       </div>
     </div>
-	</div>
+    </div>
 </template>
 
 <script>
-import options from '../services/options';
-import socket from '../services/socket';
+  import options from '../services/options'
+  import socket from '../services/socket'
 
-export default {
+
+  export default {
   data() {
     return {
       exchanges: socket.exchanges,
@@ -184,15 +187,15 @@ export default {
       },
       version: {
         number: process.env.VERSION || 'DEV',
-        date: process.env.BUILD_DATE || 'now'
+        date: process.env.BUILD_DATE || 'now',
       }
     };
   },
   mounted() {
-    socket.$on('exchange_error', this.onExchangeFailed);
+    socket.$on('exchange_error', this.onExchangeFailed)
   },
   beforeDestroy() {
-    socket.$off('exchange_error', this.onExchangeFailed);
+    socket.$off('exchange_error', this.onExchangeFailed)
   },
   computed: {
     formatAmount: () => window.formatAmount
@@ -202,7 +205,7 @@ export default {
       this.fails[exchange] = count;
     },
     switchPair(event) {
-      socket.$emit('alert', 'clear');
+      socket.$emit('alert', 'clear')
       if (options.pair) {
         options.pair = options.pair.toUpperCase();
 
@@ -251,7 +254,7 @@ export default {
 </script>
 
 <style lang='scss'>
-@import '../assets/sass/variables';
+    @import "../assets/sass/variables";
 
 .settings__report {
   display: block;

@@ -9,12 +9,17 @@ class Hitbtc extends Exchange {
 
     this.endpoints = {
       ASSETS: 'https://api.hitbtc.com/api/2/public/symbol',
-      TRADES: () => `https://api.hitbtc.com/api/2/public/trades/${this.pair}?sort=DESC&limit=500`,
+      TRADES: () => `https://api.hitbtc.com/api/2/public/trades/${
+        this.pair
+        }?sort=DESC&limit=500`,
     }
 
-    this.options = Object.assign({
-      url: 'wss://api.hitbtc.com/api/2/ws',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: 'wss://api.hitbtc.com/api/2/ws',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -57,7 +62,12 @@ class Hitbtc extends Exchange {
       return
     }
 
-    if (json.method === 'updateTrades' && json.params && json.params.data && json.params.data.length) {
+    if (
+      json.method === 'updateTrades'
+      && json.params
+      && json.params.data
+      && json.params.data.length
+    ) {
       return json.params.data.map((trade) => [
         this.id,
         +new Date(trade.timestamp),
@@ -69,16 +79,16 @@ class Hitbtc extends Exchange {
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.length) {
-			return response.map(trade => [
-				this.id,
-				+new Date(trade.timestamp),
-				+trade.price,
-				+trade.quantity,
-				trade.side === 'buy' ? 1 : 0
-			]);
-		}
-	} */
+   if (response && response.length) {
+   return response.map(trade => [
+   this.id,
+   +new Date(trade.timestamp),
+   +trade.price,
+   +trade.quantity,
+   trade.side === 'buy' ? 1 : 0
+   ]);
+   }
+   } */
 
   formatASSETS (data) {
     return data.map((a) => a.id)

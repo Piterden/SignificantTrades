@@ -13,10 +13,13 @@ class Kraken extends Exchange {
       TRADES: () => `https://api.kraken.com/0/public/Trades?pair=${this.pair}`,
     }
 
-    this.options = Object.assign({
-      url: 'https://api.kraken.com/0/public/Trades',
-      interval: 3000,
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: 'https://api.kraken.com/0/public/Trades',
+        interval: 3000,
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -45,16 +48,20 @@ class Kraken extends Exchange {
       params.since = this.reference
     }
 
-    axios.get(`http://176.31.163.155:1337/cors/${this.getUrl()}`, {
-      params,
-      cancelToken: this.source.token,
-    })
+    axios
+      .get(`http://176.31.163.155:1337/cors/${this.getUrl()}`, {
+        params,
+        cancelToken: this.source.token,
+      })
       .then((response) => {
         if (!this.connected) {
           this.emitOpen()
         }
 
-        if (!response.data || (response.data.error && response.data.error.length)) {
+        if (
+          !response.data
+          || (response.data.error && response.data.error.length)
+        ) {
           throw new Error(response.data.error.join('\n'))
         }
 
@@ -117,16 +124,16 @@ class Kraken extends Exchange {
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.result && response.result && response.result[this.pair] && response.result[this.pair].length) {
-			return response.result[this.pair].map(trade => [
-				this.id,
-				trade[2] * 1000,
-				+trade[0],
-				+trade[1],
-				trade[3] === 'b' ? 1 : 0,
-			])
-		}
-	} */
+   if (response && response.result && response.result && response.result[this.pair] && response.result[this.pair].length) {
+   return response.result[this.pair].map(trade => [
+   this.id,
+   trade[2] * 1000,
+   +trade[0],
+   +trade[1],
+   trade[3] === 'b' ? 1 : 0,
+   ])
+   }
+   } */
 
   formatASSETS (data) {
     const output = {}

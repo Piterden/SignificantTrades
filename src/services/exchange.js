@@ -12,19 +12,29 @@ class Exchange extends EventEmitter {
     this.shouldBeConnected = false
     this.reconnectionDelay = 5000
 
-    this.options = Object.assign({
-      // default exchanges options
-    }, options || {})
+    this.options = Object.assign(
+      {
+        // default exchanges options
+      },
+      options || {},
+    )
 
     try {
       const storage = JSON.parse(localStorage.getItem(this.id))
 
-      if (storage && +new Date() - storage.timestamp < 1000 * 60 * 60 * 24 * 7) {
+      if (
+        storage
+        && +new Date() - storage.timestamp < 1000 * 60 * 60 * 24 * 7
+      ) {
         console.info(`[${this.id}] reading stored ASSETS`)
 
         this.pairs = storage.data
 
-        if (!this.pairs || (Array.isArray(this.pairs) && !this.pairs.length) || (typeof this.pairs === 'object' && !Object.keys(this.pairs).length)) {
+        if (
+          !this.pairs
+          || (Array.isArray(this.pairs) && !this.pairs.length)
+          || (typeof this.pairs === 'object' && !Object.keys(this.pairs).length)
+        ) {
           this.pairs = null
         }
       }
@@ -135,19 +145,29 @@ class Exchange extends EventEmitter {
       }
     }
 
-    this.emit('live_trades', Object.keys(group).map((id) => {
-      const stacked = group[id][3].map((a) => a)
+    this.emit(
+      'live_trades',
+      Object.keys(group)
+        .map((id) => {
+          const stacked = group[id][3].map((a) => a)
 
-      group[id][2] = (group[id][2].map((price, index) => price * group[id][3][index]).reduce((a, b) => a + b) / group[id][2].length) / (group[id][3].reduce((a, b) => a + b) / group[id][3].length)
-      group[id][3] = group[id][3].reduce((a, b) => a + b)
+          group[id][2] =
+            group[id][2]
+              .map((price, index) => price * group[id][3][index])
+              .reduce((a, b) => a + b) /
+            group[id][2].length /
+            (group[id][3].reduce((a, b) => a + b) / group[id][3].length)
+          group[id][3] = group[id][3].reduce((a, b) => a + b)
 
-      const firstDigitIndex = group[id][3].toFixed(8).match(/[1-9]/)
+          const firstDigitIndex = group[id][3].toFixed(8)
+            .match(/[1-9]/)
 
-      group[id][2] = this.toFixed(group[id][2], 10)
-      group[id][3] = this.toFixed(group[id][3], 10)
+          group[id][2] = this.toFixed(group[id][2], 10)
+          group[id][3] = this.toFixed(group[id][3], 10)
 
-      return group[id]
-    }))
+          return group[id]
+        }),
+    )
   }
 
   toFixed (number, precision) {
@@ -171,7 +191,9 @@ class Exchange extends EventEmitter {
   }
 
   getUrl () {
-    return typeof this.options.url === 'function' ? this.options.url.apply(this, arguments) : this.options.url
+    return typeof this.options.url === 'function'
+      ? this.options.url.apply(this, arguments)
+      : this.options.url
   }
 
   formatLiveTrades (data) {
@@ -179,8 +201,8 @@ class Exchange extends EventEmitter {
   }
 
   /* formatRecentsTrades(data) {
-		return data;
-	} */
+   return data;
+   } */
 
   formatASSETS (data) {
     return data
@@ -212,47 +234,47 @@ class Exchange extends EventEmitter {
   }
 
   /* fetchRecentsTrades() {
-		if (!this.endpoints || !this.endpoints.TRADES) {
-			this.pairs = [];
+   if (!this.endpoints || !this.endpoints.TRADES) {
+   this.pairs = [];
 
-			return Promise.resolve();
-		}
+   return Promise.resolve();
+   }
 
-		let urls = typeof this.endpoints.TRADES === 'function' ? this.endpoints.TRADES(this.pair) : this.endpoints.TRADES
+   let urls = typeof this.endpoints.TRADES === 'function' ? this.endpoints.TRADES(this.pair) : this.endpoints.TRADES
 
-		if (!Array.isArray(urls)) {
-			urls = [urls];
-		}
+   if (!Array.isArray(urls)) {
+   urls = [urls];
+   }
 
-		console.log(`[${this.id}] fetching recent trades...`, urls)
+   console.log(`[${this.id}] fetching recent trades...`, urls)
 
-		return new Promise((resolve, reject) => {
-			return Promise.all(urls.map(action => {
-				action = action.split('|');
+   return new Promise((resolve, reject) => {
+   return Promise.all(urls.map(action => {
+   action = action.split('|');
 
-				let method = action.length > 1 ? action.shift() : 'GET';
-				let url = action[0];
+   let method = action.length > 1 ? action.shift() : 'GET';
+   let url = action[0];
 
-				return fetch(`${process.env.PROXY_URL ? process.env.PROXY_URL : ''}${url}`, {method: method})
-				.then(response => response.json())
-				.catch(response => [])
-			})).then(data => {
-				console.log(`[${this.id}] received API recents trades => format trades`);
+   return fetch(`${process.env.PROXY_URL ? process.env.PROXY_URL : ''}${url}`, {method: method})
+   .then(response => response.json())
+   .catch(response => [])
+   })).then(data => {
+   console.log(`[${this.id}] received API recents trades => format trades`);
 
-				if (data.length === 1) {
-					data = data[0];
-				}
+   if (data.length === 1) {
+   data = data[0];
+   }
 
-				const trades = this.formatRecentsTrades(data);
+   const trades = this.formatRecentsTrades(data);
 
-				if (!trades || !trades.length) {
-					return resolve();
-				}
+   if (!trades || !trades.length) {
+   return resolve();
+   }
 
-				return resolve(trades);
-			});
-		});
-	} */
+   return resolve(trades);
+   });
+   });
+   } */
 
   fetchASSETS () {
     if (!this.endpoints || !this.endpoints.ASSETS) {
@@ -261,7 +283,10 @@ class Exchange extends EventEmitter {
       return Promise.resolve()
     }
 
-    let urls = typeof this.endpoints.ASSETS === 'function' ? this.ASSETS(this.pair) : this.endpoints.ASSETS
+    let urls =
+      typeof this.endpoints.ASSETS === 'function'
+        ? this.ASSETS(this.pair)
+        : this.endpoints.ASSETS
 
     if (!Array.isArray(urls)) {
       urls = [urls]
@@ -277,7 +302,10 @@ class Exchange extends EventEmitter {
 
       return new Promise((resolve, reject) => {
         setTimeout(() => {
-          resolve(fetch(`${process.env.PROXY_URL ? process.env.PROXY_URL : ''}${url}`, { method })
+          resolve(fetch(
+            `${process.env.PROXY_URL ? process.env.PROXY_URL : ''}${url}`,
+            { method },
+          )
             .then((response) => response.json())
             .catch((err) => {
               console.log(err)
@@ -298,10 +326,13 @@ class Exchange extends EventEmitter {
 
         console.log(`[${this.id}] storing ASSETS`, this.pairs)
 
-        localStorage.setItem(this.id, JSON.stringify({
-          timestamp: +new Date(),
-          data: this.pairs,
-        }))
+        localStorage.setItem(
+          this.id,
+          JSON.stringify({
+            timestamp: +new Date(),
+            data: this.pairs,
+          }),
+        )
       }
       else {
         this.pairs = null

@@ -9,12 +9,17 @@ class Poloniex extends Exchange {
 
     this.endpoints = {
       ASSETS: 'https://poloniex.com/public?command=returnTicker',
-      TRADES: () => () => `https://poloniex.com/public?command=returnTradeHistory&currencyPair=${this.pair}&start=${(+new Date() / 1000) - 60 * 15}&end=${+new Date() / 1000}`,
+      TRADES: () => () => `https://poloniex.com/public?command=returnTradeHistory&currencyPair=${
+        this.pair
+        }&start=${+new Date() / 1000 - 60 * 15}&end=${+new Date() / 1000}`,
     }
 
-    this.options = Object.assign({
-      url: 'wss://api2.poloniex.com',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: 'wss://api2.poloniex.com',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -56,13 +61,15 @@ class Poloniex extends Exchange {
     }
 
     if (json[2] && json[2].length) {
-      return json[2].filter((result) => result[0] === 't').map((trade) => [
-        this.id,
-        +new Date(trade[5] * 1000),
-        +trade[3],
-        +trade[4],
-        trade[2],
-      ])
+      return json[2]
+        .filter((result) => result[0] === 't')
+        .map((trade) => [
+          this.id,
+          +new Date(trade[5] * 1000),
+          +trade[3],
+          +trade[4],
+          trade[2],
+        ])
     }
   }
 
@@ -70,23 +77,29 @@ class Poloniex extends Exchange {
     const output = {}
 
     Object.keys(data).forEach((a) => {
-      output[a.split('_').reverse().join('').replace(/USDT$/, 'USD')] = a
+      output[
+        a
+          .split('_')
+          .reverse()
+          .join('')
+          .replace(/USDT$/, 'USD')
+        ] = a
     })
 
     return output
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.length) {
-			return response.map(trade => [
-				this.id,
-				+new Date(trade.date.split(' ').join('T') + 'Z'),
-				+trade.rate,
-				+trade.amount,
-				trade.type === 'buy' ? 1 : 0,
-			]);
-		}
-	} */
+   if (response && response.length) {
+   return response.map(trade => [
+   this.id,
+   +new Date(trade.date.split(' ').join('T') + 'Z'),
+   +trade.rate,
+   +trade.amount,
+   trade.type === 'buy' ? 1 : 0,
+   ]);
+   }
+   } */
 }
 
 export default Poloniex

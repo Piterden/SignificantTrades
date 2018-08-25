@@ -22,9 +22,12 @@ class Gdax extends Exchange {
       return false
     }
 
-    this.options = Object.assign({
-      url: 'wss://ws-feed.pro.coinbase.com',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: 'wss://ws-feed.pro.coinbase.com',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -41,13 +44,15 @@ class Gdax extends Exchange {
       const obj = JSON.parse(event.data)
 
       if (obj && obj.type === 'match') {
-        this.emitTrades([[
-          this.id,
-          +new Date(obj.time),
-          +obj.price,
-          +obj.size,
-          obj.side === 'buy' ? 0 : 1,
-        ]])
+        this.emitTrades([
+          [
+            this.id,
+            +new Date(obj.time),
+            +obj.price,
+            +obj.size,
+            obj.side === 'buy' ? 0 : 1,
+          ],
+        ])
       }
     })
 
@@ -79,16 +84,16 @@ class Gdax extends Exchange {
   }
 
   /* formatRecentsTrades(response) {
-		if (response && response.length) {
-			return response.map(trade => [
-				this.id,
-				+new Date(trade.time),
-				+trade.price,
-				+trade.size,
-				trade.side === 'buy' ? 0 : 1,
-			])
-		}
-	} */
+   if (response && response.length) {
+   return response.map(trade => [
+   this.id,
+   +new Date(trade.time),
+   +trade.price,
+   +trade.size,
+   trade.side === 'buy' ? 0 : 1,
+   ])
+   }
+   } */
 }
 
 export default Gdax

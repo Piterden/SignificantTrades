@@ -22,9 +22,12 @@ class Huobi extends Exchange {
       return false
     }
 
-    this.options = Object.assign({
-      url: 'wss://api.huobi.pro/ws',
-    }, this.options)
+    this.options = Object.assign(
+      {
+        url: 'wss://api.huobi.pro/ws',
+      },
+      this.options,
+    )
   }
 
   connect () {
@@ -84,7 +87,10 @@ class Huobi extends Exchange {
   }
 
   formatASSETS (response) {
-    return Object.keys(response.data).map((a) => (response.data[a]['base-currency'] + response.data[a]['quote-currency']).toUpperCase())
+    return Object.keys(response.data)
+      .map((a) => (
+        response.data[a]['base-currency'] + response.data[a]['quote-currency']
+      ).toUpperCase())
   }
 }
 

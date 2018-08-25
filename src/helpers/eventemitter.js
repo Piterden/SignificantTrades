@@ -26,7 +26,6 @@ else {
   }
 }
 
-
 /* Polyfill EventEmitter. */
 const EventEmitter = function () {
   this.events = {}
