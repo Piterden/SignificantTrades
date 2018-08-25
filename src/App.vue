@@ -11,65 +11,68 @@
 </template>
 
 <script>
-import socket from './services/socket';
-import options from './services/options';
+  import socket from './services/socket'
+  import options from './services/options'
 
-import Alerts from './components/Alerts.vue';
-import Header from './components/Header.vue';
-import Settings from './components/Settings.vue';
-import TradeList from './components/TradeList.vue';
-import TradeChart from './components/TradeChart.vue';
+  import Alerts from './components/Alerts.vue'
+  import Header from './components/Header.vue'
+  import Settings from './components/Settings.vue'
+  import TradeList from './components/TradeList.vue'
+  import TradeChart from './components/TradeChart.vue'
 
-window.formatPrice = function(price, precision) {
-  price = +price;
+
+  window.formatPrice = function (price, precision) {
+    price = +price
 
   if (isNaN(price) || !price) {
-    return (0).toFixed(precision);
+    return (0).toFixed(precision)
   }
 
   if (precision) {
-    return price.toFixed(precision);
+    return price.toFixed(precision)
   }
 
   if (price <= 0.0001) {
-    return (price * 100000000).toFixed() + ' <small>sats</small>';
+    return (price * 100000000).toFixed() + ' <small>sats</small>'
   } else if (price >= 1000) {
-    return +price.toFixed(2);
+    return +price.toFixed(2)
   }
 
   if (options.precision) {
-    return +price.toFixed(options.precision);
+    return +price.toFixed(options.precision)
   }
 
-  const firstDigitIndex = price.toString().match(/[1-9]/);
+    const firstDigitIndex = price.toString().match(/[1-9]/)
 
   if (firstDigitIndex) {
     return +price.toFixed(
       Math.max(8 - price.toFixed().length, firstDigitIndex.index + 1)
-    );
+    )
   }
 
-  return +price.toFixed(8 - price.toFixed().length);
-};
+    return +price.toFixed(8 - price.toFixed().length)
+  }
 
 window.formatAmount = function(amount, precision) {
   if (amount >= 1000000) {
-    amount = (amount / 1000000).toFixed(1) + 'M';
+    amount = (amount / 1000000).toFixed(1) + 'M'
   } else if (amount >= 1000) {
-    amount = (amount / 1000).toFixed(1) + 'K';
+    amount = (amount / 1000).toFixed(1) + 'K'
   } else {
-    amount = formatPrice(amount, precision);
+    amount = formatPrice(amount, precision)
   }
 
-  return amount;
-};
+  return amount
+}
 
 window.pad = function(num, size) {
-  var s = '000000000' + num;
-  return s.substr(s.length - size);
-};
+  var s = '000000000' + num
+  return s.substr(s.length - size)
+}
 
 export default {
+  name: 'App',
+
   components: {
     Alerts,
     Header,
@@ -77,40 +80,43 @@ export default {
     TradeList,
     TradeChart
   },
-  name: 'app',
+
   data() {
     return {
+      symbol: '$',
       pair: 'BTCUSD',
       currency: 'dollar',
       commodity: 'bitcoin',
-      symbol: '$',
-
       showSettings: false,
-      showStatistics: false
-    };
+      showStatistics: false,
+    }
   },
+
   created() {
-    socket.$on('pairing', pair => {
-      this.pair = options.pair = pair;
+    socket.$on('pairing', (pair) => {
+      this.pair = options.pair = pair
 
-      this.updatePairCurrency(this.pair);
-    });
+      this.updatePairCurrency(this.pair)
+    })
   },
-  mounted() {
-    // Test if there is some kind of adblocker ON
-    fetch('showads.js')
-      .then(() => {})
-      .catch((response, a) => {
-        socket.$emit('alert', {
-          type: 'error',
-          title: `Disable your AdBlocker`,
-          message: `Some adblockers may block access to exchanges api.\nMake sure to turn it off, there is no ads anyway :-)`,
-          id: `adblock_error`
-        });
-      });
 
-    socket.initialize();
+  async mounted () {
+    try {
+      await fetch('showads.js')
+    }
+    catch (error) {
+      socket.$emit('alert', {
+        id: 'adblock_error',
+        type: 'error',
+        title: 'Disable your AdBlocker',
+        message: `Some adblockers may block access to exchanges api.
+Make sure to turn it off, there is no ads anyway :-)`,
+      })
+    }
+
+    socket.initialize()
   },
+
   methods: {
     updatePairCurrency(pair) {
       const symbols = {
@@ -120,25 +126,25 @@ export default {
         USD: ['dollar', '$'],
         JPY: ['yen', '¥'],
         ETH: ['ethereum', 'ETH']
-      };
+      }
 
-      this.currency = 'dollar';
-      this.commodity = 'coin';
-      this.symbol = '$';
+      this.currency = 'dollar'
+      this.commodity = 'coin'
+      this.symbol = '$'
 
       for (let symbol of Object.keys(symbols)) {
         if (new RegExp(symbol + '$').test(options.pair)) {
-          this.currency = symbols[symbol][0];
-          this.symbol = symbols[symbol][1];
+          this.currency = symbols[symbol][0]
+          this.symbol = symbols[symbol][1]
         }
 
         if (new RegExp('^' + symbol).test(options.pair)) {
-          this.commodity = symbols[symbol][0];
+          this.commodity = symbols[symbol][0]
         }
       }
-    }
-  }
-};
+    },
+  },
+}
 </script>
 
 <style lang='scss'>

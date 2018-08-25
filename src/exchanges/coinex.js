@@ -1,90 +1,87 @@
 import Exchange from '../services/exchange'
 
+
 class Coinex extends Exchange {
+  constructor (options) {
+    super(options)
 
-	constructor(options) {
-		super(options);
+    this.id = 'coinex'
 
-		this.id = 'coinex';
+    this.endpoints = {
+      ASSETS: 'https://api.coinex.com/v1/market/list',
+      TRADES: () => `https://api.coinex.com/v1/market/deals?market=${this.pair}`,
+    }
 
-		this.endpoints = {
-			PRODUCTS: 'https://api.coinex.com/v1/market/list',
-			TRADES: () => `https://api.coinex.com/v1/market/deals?market=${this.pair}`
-		}
+    this.matchPairName = (pair) => {
+      pair = pair.replace(/USD$/, 'USDT')
 
-		this.matchPairName = pair => {
-			pair = pair.replace(/USD$/, 'USDT');
+      if (this.pairs.indexOf(pair) !== -1) {
+        return pair
+      }
 
-			if (this.pairs.indexOf(pair) !== -1) {
-				return pair;
-			}
+      return false
+    }
 
-			return false;
-		}
+    this.options = Object.assign({
+      url: () => 'wss://socket.coinex.com/',
+    }, this.options)
+  }
 
-		this.options = Object.assign({
-			url: () => {
-				return `wss://socket.coinex.com/`
-			},
-		}, this.options);
-	}
+  connect () {
+    if (!super.connect()) {
+      return
+    }
 
-	connect() {
+    this.api = new WebSocket(this.getUrl())
 
-		if (!super.connect())
-			return;
+    this.api.addEventListener('message', (event) => this.emitTrades(this.formatLiveTrades(JSON.parse(event.data))))
 
-		this.api = new WebSocket(this.getUrl());
+    this.api.addEventListener('open', (event) => {
+      this.skip = true
 
-		this.api.onmessage = event => this.emitTrades(this.formatLiveTrades(JSON.parse(event.data)));
+      this.api.send(JSON.stringify({
+        method: 'deals.subscribe',
+        params: [this.pair],
+        id: 16,
+      }))
 
-		this.api.onopen = event => {
-			this.skip = true;
+      this.emitOpen(event)
+    })
 
-			this.api.send(JSON.stringify({
-				method: 'deals.subscribe',
-				params: [this.pair],
-				id: 16
-			}));
+    this.api.onclose = this.emitClose.bind(this)
+    this.api.addEventListener('error', this.emitError.bind(this))
+  }
 
-			this.emitOpen(event);
-		};
+  disconnect () {
+    if (!super.disconnect()) {
+      return
+    }
 
-		this.api.onclose = this.emitClose.bind(this);
-		this.api.onerror = this.emitError.bind(this);
-	}
+    if (this.api && this.api.readyState < 2) {
+      this.api.close()
+    }
+  }
 
-	disconnect() {
-		if (!super.disconnect())
-			return;
+  formatLiveTrades (json) {
+    if (json.method === 'deals.update' && json.params && json.params.length && json.params[0] === this.pair) {
+      if (this.skip) {
+        this.skip = false
+        return false
+      }
 
-		if (this.api && this.api.readyState < 2) {
-			this.api.close();
-		}
-	}
+      return json.params[1].map((trade) => [
+        this.id,
+        trade.time * 1000,
+        +trade.price,
+        +trade.amount,
+        trade.type === 'buy' ? 1 : 0,
+      ])
+    }
 
-	formatLiveTrades(json) {
-		if (json.method === 'deals.update' && json.params && json.params.length && json.params[0] === this.pair) {
-			if (this.skip) {
-				this.skip = false;
-				return false;
-			}
+    return false
+  }
 
-			return json.params[1].map(trade => {
-				return [
-					this.id,
-					trade.time * 1000,
-					+trade.price,
-					+trade.amount,
-					trade.type === 'buy' ? 1 : 0
-				]
-			})
-		}
-
-		return false;
-	}
-
-	/* formatRecentsTrades(response) {
+  /* formatRecentsTrades(response) {
 		if (response && response.data && response.data.length) {
 			return response.data.map(trade => [
 				this.id,
@@ -96,14 +93,13 @@ class Coinex extends Exchange {
 		}
 	} */
 
-	formatProducts(response) {
-		if (!response ||  !response.data || !response.data.length) {
-			return null;
-		}
+  formatASSETS (response) {
+    if (!response || !response.data || !response.data.length) {
+      return null
+    }
 
-		return response.data;
-	}
-
+    return response.data
+  }
 }
 
-export default Coinex;
+export default Coinex

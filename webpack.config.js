@@ -1,14 +1,13 @@
 const path = require('path')
 const webpack = require('webpack')
 
-const date = new Date();
 
 const webpackConfig = {
   entry: './src/index.js',
   output: {
     path: path.resolve(__dirname, './dist'),
     publicPath: 'dist/',
-    filename: 'build.js'
+    filename: 'build.js',
   },
   module: {
     rules: [
@@ -16,7 +15,7 @@ const webpackConfig = {
         test: /\.css$/,
         use: [
           'vue-style-loader',
-          'css-loader'
+          'css-loader',
         ],
       },
       {
@@ -24,7 +23,7 @@ const webpackConfig = {
         use: [
           'vue-style-loader',
           'css-loader',
-          'sass-loader'
+          'sass-loader',
         ],
       },
       {
@@ -32,7 +31,7 @@ const webpackConfig = {
         use: [
           'vue-style-loader',
           'css-loader',
-          'sass-loader?indentedSyntax'
+          'sass-loader?indentedSyntax',
         ],
       },
       {
@@ -43,84 +42,67 @@ const webpackConfig = {
             // Since sass-loader (weirdly) has SCSS as its default parse mode, we map
             // the "scss" and "sass" values for the lang attribute to the right configs here.
             // other preprocessors should work out of the box, no loader config like this necessary.
-            'scss': [
+            scss: [
               'vue-style-loader',
               'css-loader',
-              'sass-loader'
+              'sass-loader',
             ],
-            'sass': [
+            sass: [
               'vue-style-loader',
               'css-loader',
-              'sass-loader?indentedSyntax'
-            ]
-          }
+              'sass-loader?indentedSyntax',
+            ],
+          },
           // other vue-loader options go here
-        }
+        },
       },
       {
         test: /\.js$/,
         loader: 'babel-loader',
-        exclude: /node_modules/
+        exclude: /node_modules/,
       },
       {
         test: /\.(png|jpg|gif|svg|woff|woff2|eot|ttf|otf)$/,
         loader: 'file-loader',
         options: {
-          name: '[name].[ext]?[hash]'
-        }
+          name: '[name].[ext]?[hash]',
+        },
       },
-    ]
+    ],
   },
   resolve: {
     alias: {
-      'vue$': 'vue/dist/vue.esm.js'
+      vue$: 'vue/dist/vue.esm.js',
     },
-    extensions: ['.js', '.vue', '.json']
+    extensions: ['.js', '.vue', '.json'],
   },
   devServer: {
     historyApiFallback: true,
     noInfo: true,
-    overlay: true
+    overlay: true,
   },
   performance: {
-    hints: false
+    hints: false,
   },
   devtool: process.env.NODE_ENV === 'production'
     ? '#source-map'
     : '#eval-source-map',
-  plugins: [
-    new webpack.DefinePlugin({
-      'process.env': {
-        NODE_ENV: process.env.NODE_ENV,
-        VERSION: require('./package.json').version,
-        BUILD_DATE: `${date.getDate()} ${date.toLocaleString(
-          'en',
-          { month: 'short' }
-        ).toLowerCase()}`,
-        PROXY_URL: process.env.PROXY_URL || 'https://cors.aggr.trade/',
-        API_URL: process.env.API_URL || 'https://api.aggr.trade',
-      }
-    }),
-  ],
+  plugins: [],
 }
 
 if (process.env.NODE_ENV === 'production') {
-  webpackConfig.plugins.push(
-    new webpack.optimize.UglifyJsPlugin({
-      sourceMap: false,
-      mangle: {
-        keep_fnames: true
-      },
-      compress: {
-        warnings: false
-      }
-    })
-  )
-  webpackConfig.plugins.push(
-    new webpack.LoaderOptionsPlugin({
-      minimize: true
-    })
-  )
+  webpackConfig.plugins.push(new webpack.optimize.UglifyJsPlugin({
+    sourceMap: false,
+    mangle: {
+      keep_fnames: true,
+    },
+    compress: {
+      warnings: false,
+    },
+  }))
+  webpackConfig.plugins.push(new webpack.LoaderOptionsPlugin({
+    minimize: true,
+  }))
 }
 
 module.exports = webpackConfig

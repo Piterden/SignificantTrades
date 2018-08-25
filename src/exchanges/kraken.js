@@ -1,119 +1,122 @@
-import Exchange from '../services/exchange'
 import axios from 'axios'
+import Exchange from '../services/exchange'
+
 
 class Kraken extends Exchange {
+  constructor (options) {
+    super(options)
 
-	constructor(options) {
-		super(options);
+    this.id = 'kraken'
 
-		this.id = 'kraken';
+    this.endpoints = {
+      ASSETS: 'https://api.kraken.com/0/public/AssetPairs',
+      TRADES: () => `https://api.kraken.com/0/public/Trades?pair=${this.pair}`,
+    }
 
-		this.endpoints = {
-			PRODUCTS: 'https://api.kraken.com/0/public/AssetPairs',
-			TRADES: () => `https://api.kraken.com/0/public/Trades?pair=${this.pair}`
-		}
+    this.options = Object.assign({
+      url: 'https://api.kraken.com/0/public/Trades',
+      interval: 3000,
+    }, this.options)
+  }
 
-		this.options = Object.assign({
-			url: 'https://api.kraken.com/0/public/Trades',
-			interval: 3000
-		}, this.options);
-	}
+  connect () {
+    if (!super.connect()) {
+      return
+    }
 
-	connect() {
-		if (!super.connect())
-			return;
+    this.schedule()
+  }
 
-		this.schedule();
-	}
+  schedule () {
+    clearTimeout(this.timeout)
+    this.timeout = setTimeout(this.get.bind(this), this.options.interval)
+  }
 
-	schedule() {
-		clearTimeout(this.timeout);
-		this.timeout = setTimeout(this.get.bind(this), this.options.interval);
-	}
+  get () {
+    const token = axios.CancelToken
 
-	get() {
-		const token = axios.CancelToken;
-		this.source = token.source();
+    this.source = token.source()
 
-		const params = {
-			pair: this.pair
-		}
+    const params = {
+      pair: this.pair,
+    }
 
-		if (this.reference) {
-			params.since = this.reference;
-		}
+    if (this.reference) {
+      params.since = this.reference
+    }
 
-		axios.get(`http://176.31.163.155:1337/cors/${this.getUrl()}`, {
-			params: params,
-			cancelToken: this.source.token
-		})
-			.then(response => {
-				if (!this.connected) {
-					this.emitOpen();
-				}
+    axios.get(`http://176.31.163.155:1337/cors/${this.getUrl()}`, {
+      params,
+      cancelToken: this.source.token,
+    })
+      .then((response) => {
+        if (!this.connected) {
+          this.emitOpen()
+        }
 
-				if (!response.data || (response.data.error && response.data.error.length)) {
-					throw new Error(response.data.error.join("\n"));
-				}
+        if (!response.data || (response.data.error && response.data.error.length)) {
+          throw new Error(response.data.error.join('\n'))
+        }
 
-				this.emitTrades(this.formatLiveTrades(response.data));
+        this.emitTrades(this.formatLiveTrades(response.data))
 
-				this.schedule();
-			})
-			.catch(error => {
-				if (axios.isCancel(error)) {
-					return;
-				}
+        this.schedule()
+      })
+      .catch((error) => {
+        if (axios.isCancel(error)) {
+          return
+        }
 
-				this.emitError(error);
-				this.emitClose();
+        this.emitError(error)
+        this.emitClose()
 
-				return error;
-			})
-			.then(() => {
-				delete this.source;
-			})
-	}
+        return error
+      })
+      .then(() => {
+        delete this.source
+      })
+  }
 
-	disconnect() {
-		if (!this.connected ||  !super.disconnect())
-			return;
+  disconnect () {
+    if (!this.connected || !super.disconnect()) {
+      return
+    }
 
-		clearTimeout(this.timeout);
-		this.source && this.source.cancel();
+    clearTimeout(this.timeout)
+    this.source && this.source.cancel()
 
-		delete this.reference;
+    delete this.reference
 
-		this.emitClose();
-	}
+    this.emitClose()
+  }
 
-	formatLiveTrades(response) {
-		const initial = typeof this.reference === 'undefined';
+  formatLiveTrades (response) {
+    const initial = typeof this.reference === 'undefined'
 
-		if (response.result && response.result[this.pair]) {
-			if (response.result.last) {
-				this.reference = response.result.last;
-			}
+    if (response.result && response.result[this.pair]) {
+      if (response.result.last) {
+        this.reference = response.result.last
+      }
 
-			if (!initial) {
-				const output = [];
-				for (let trade of response.result[this.pair]) {
+      if (!initial) {
+        const output = []
 
-					output.push([
-						this.id,
-						trade[2] * 1000, // timestamp
-						+trade[0], // price
-						+trade[1], // volume
-						trade[3] === 'b' ? 1 : 0, // is buy
-					]);
-				}
+        for (const trade of response.result[this.pair]) {
+          output.push([
+            this.id,
+            trade[2] * 1000, // timestamp
+            +trade[0], // price
+            +trade[1], // volume
+            trade[3] === 'b' ? 1 : 0, // is buy
+          ])
+        }
 
-				return output;
-			}
-		}
-	}
+        return output
+      }
+    }
+  }
 
-	/* formatRecentsTrades(response) {
+  /* formatRecentsTrades(response) {
 		if (response && response.result && response.result && response.result[this.pair] && response.result[this.pair].length) {
 			return response.result[this.pair].map(trade => [
 				this.id,
@@ -125,31 +128,30 @@ class Kraken extends Exchange {
 		}
 	} */
 
-	formatProducts(data) {
-		const output = {};
+  formatASSETS (data) {
+    const output = {}
 
-		Object.keys(data.result).forEach(a => {
-			if (a.indexOf('.') !== -1) {
-				return;
-			}
+    Object.keys(data.result).forEach((a) => {
+      if (a.indexOf('.') !== -1) {
+        return
+      }
 
-			let base = data.result[a].base;
-			let quote = data.result[a].quote;
+      let base = data.result[a].base
+      let quote = data.result[a].quote
 
-			if (base.length > 3 && (base[0] === 'Z' || base[0] === 'X')) {
-				base = base.substr(1);
-			}
+      if (base.length > 3 && (base[0] === 'Z' || base[0] === 'X')) {
+        base = base.substr(1)
+      }
 
-			if (quote.length > 3 && (quote[0] === 'Z' || quote[0] === 'X')) {
-				quote = quote.substr(1);
-			}
+      if (quote.length > 3 && (quote[0] === 'Z' || quote[0] === 'X')) {
+        quote = quote.substr(1)
+      }
 
-			output[(base + quote).replace('XBT', 'BTC')] = a;
-		})
+      output[(base + quote).replace('XBT', 'BTC')] = a
+    })
 
-		return output;
-	}
-
+    return output
+  }
 }
 
-export default Kraken;
+export default Kraken

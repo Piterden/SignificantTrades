@@ -1,73 +1,73 @@
 import Exchange from '../services/exchange'
 
+
+const API_ROOT = 'https://api.binance.com/api/v1'
+const ASSETS = `${API_ROOT}/ticker/allPrices`
+
+const getTrades = (pair) => `https://api.binance.com/api/v1/trades?symbol=${pair.toUpperCase()}`
+
 class Binance extends Exchange {
+  constructor (options) {
+    super(options || {})
+    this.id = 'binance'
+    this.endpoints = { ASSETS, TRADES: TRADES(this.pair) }
 
-	constructor(options) {
-		super(options);
+    this.matchPairName = (pair) => {
+      pair = pair.replace(/USD$/, 'USDT')
 
-		this.id = 'binance';
+      if (this.pairs.indexOf(pair) !== -1) {
+        return pair.toLowerCase()
+      }
 
-		this.endpoints = {
-			PRODUCTS: 'https://api.binance.com/api/v1/ticker/allPrices',
-			TRADES: () => `https://api.binance.com/api/v1/trades?symbol=${this.pair.toUpperCase()}`
-		}
+      return false
+    }
 
-		this.matchPairName = pair => {
-			pair = pair.replace(/USD$/, 'USDT');
+    this.options = Object.assign({
+      url: () => `wss://stream.binance.com:9443/ws/${this.pair}@aggTrade`,
+    }, this.options)
+  }
 
-			if (this.pairs.indexOf(pair) !== -1) {
-				return pair.toLowerCase();
-			}
+  connect () {
+    if (!super.connect()) {
+      return
+    }
 
-			return false;
-		}
+    this.api = new WebSocket(this.getUrl())
 
-		this.options = Object.assign({
-			url: () => {
-				return 'wss://stream.binance.com:9443/ws/' + this.pair + '@aggTrade';
-			},
-		}, this.options);
-	}
+    this.api.addEventListener('message', (event) => this.emitTrades(this.formatLiveTrades(JSON.parse(event.data))))
 
-	connect() {
-		if (!super.connect())
-			return;
+    this.api.addEventListener('open', this.emitOpen.bind(this))
 
-		this.api = new WebSocket(this.getUrl());
+    this.api.onclose = this.emitClose.bind(this)
 
-		this.api.onmessage = event => this.emitTrades(this.formatLiveTrades(JSON.parse(event.data)));
+    this.api.addEventListener('error', this.emitError.bind(this))
+  }
 
-		this.api.onopen = this.emitOpen.bind(this);
+  disconnect () {
+    if (!super.disconnect()) {
+      return
+    }
 
-		this.api.onclose = this.emitClose.bind(this);
+    if (this.api && this.api.readyState < 2) {
+      this.api.close()
+    }
+  }
 
-		this.api.onerror = this.emitError.bind(this);
-	}
+  formatLiveTrades (trade) {
+    if (trade) {
+      return [[
+        this.id,
+        trade.E,
+        +trade.p,
+        +trade.q,
+        trade.m ? 0 : 1,
+      ]]
+    }
 
-	disconnect() {
-		if (!super.disconnect())
-			return;
+    return false
+  }
 
-		if (this.api && this.api.readyState < 2) {
-			this.api.close();
-		}
-	}
-
-	formatLiveTrades(trade) {
-		if (trade) {
-			return [[
-				this.id,
-				trade.E,
-				+trade.p,
-				+trade.q,
-				trade.m ? 0 : 1
-			]]
-		}
-
-		return false;
-	}
-
-	/* formatRecentsTrades(data) {
+  /* formatRecentsTrades(data) {
 		return data.map(trade => [
 			this.id,
 			trade.time,
@@ -77,10 +77,9 @@ class Binance extends Exchange {
 		])
 	} */
 
-	formatProducts(data) {
-		return data.map(a => a.symbol)
-	}
-
+  formatASSETS (data) {
+    return data.map((a) => a.symbol)
+  }
 }
 
-export default Binance;
+export default Binance

@@ -1,7 +1,5 @@
 import Vue from 'vue'
 import Axios from 'axios'
-
-import Kraken from '../exchanges/kraken'
 import Bitmex from '../exchanges/bitmex'
 import Coinex from '../exchanges/coinex'
 import Huobi from '../exchanges/huobi'
@@ -15,295 +13,301 @@ import Poloniex from '../exchanges/poloniex'
 
 import options from './options'
 
+
 const exchanges = [
-	// new Kraken(), <- disabled til Kraken release ws api
-	new Bitmex(),
-	new Bitfinex(),
-	new Coinex(),
-	new Binance(),
-	new Gdax(),
-	new Huobi(),
-	new Bitstamp(),
-	new Hitbtc(),
-	new Okex(),
-	new Poloniex(),
-];
+  // new Kraken(), <- disabled til Kraken release ws api
+  new Bitmex(),
+  new Bitfinex(),
+  new Coinex(),
+  new Binance(),
+  new Gdax(),
+  new Huobi(),
+  new Bitstamp(),
+  new Hitbtc(),
+  new Okex(),
+  new Poloniex(),
+]
+
+const { API_URL, PROXY_URL } = process.env
 
 const emitter = new Vue({
-	data() {
-		return {
-			delay: 0,
-			trades: [],
-			exchanges: [],
-			connected: [],
-			matchs: {},
-			errors: {},
-			timestamps: {},
-			API_URL: null,
-			PROXY_URL: null,
-			queue: [],
-		}
-	},
-	methods: {
-		initialize() {
-			this.exchanges = exchanges.map(exchange => exchange.id);
+  data () {
+    return {
+      delay: 0,
+      trades: [],
+      exchanges: [],
+      connected: [],
+      matchs: {},
+      errors: {},
+      timestamps: {},
+      API_URL: null,
+      PROXY_URL: null,
+      queue: [],
+    }
+  },
+  methods: {
+    initialize () {
+      this.exchanges = exchanges.map((exchange) => exchange.id)
 
-			console.log(`[sockets] initializing ${this.exchanges.length} exchange(s)`);
+      console.log(`[sockets] initializing ${this.exchanges.length} exchange(s)`)
 
-			if (process.env.API_URL) {
-				this.API_URL = process.env.API_URL;
-				console.info(`[sockets] API_URL = ${this.API_URL}`);
-			}
+      if (process.env.API_URL) {
+        this.API_URL = process.env.API_URL
+        console.info(`[sockets] API_URL = ${this.API_URL}`)
+      }
 
-			if (process.env.PROXY_URL) {
-				this.PROXY_URL = process.env.PROXY_URL;
-				console.info(`[sockets] PROXY_URL = ${this.PROXY_URL}`);
-			}
+      if (process.env.PROXY_URL) {
+        this.PROXY_URL = process.env.PROXY_URL
+        console.info(`[sockets] PROXY_URL = ${this.PROXY_URL}`)
+      }
 
-			window.emittrade = (trades) => this.$emit('trades', trades);
+      window.emittrade = (trades) => this.$emit('trades', trades)
 
-			exchanges.forEach(exchange => {
-				exchange.on('live_trades', data => {
-					if (!data || !data.length) {
-						return;
-					}
+      exchanges.forEach((exchange) => {
+        exchange.on('live_trades', (data) => {
+          if (!data || !data.length) {
+            return
+          }
 
-					this.timestamps[exchange.id] = +new Date();
+          this.timestamps[exchange.id] = +new Date()
 
-					data = data
-						.sort((a, b) => a[1] - b[1]);
+          data = data
+            .sort((a, b) => a[1] - b[1])
 
-					if (this.delayed) {
-						for (let i = 0; i < data.length; i++) {
-							data[i][1] -= this.delay;
-						}
-					}
+          if (this.delayed) {
+            for (let i = 0; i < data.length; i++) {
+              data[i][1] -= this.delay
+            }
+          }
 
-					this.queue = this.queue.concat(data);
-				});
+          this.queue = this.queue.concat(data)
+        })
 
-				exchange.on('open', event => {
-					console.log(`[socket.exchange.on.open] ${exchange.id} opened`);
+        exchange.on('open', (event) => {
+          console.log(`[socket.exchange.on.open] ${exchange.id} opened`)
 
-					const index = this.connected.indexOf(exchange.id);
-					index === -1 && this.connected.push(exchange.id);
+          const index = this.connected.indexOf(exchange.id)
 
-					this.errors[exchange.id] = 0;
+          index === -1 && this.connected.push(exchange.id)
 
-					this.$emit('connected', this.connected);
-				});
+          this.errors[exchange.id] = 0
 
-				exchange.on('close', event => {
-					console.log(`[socket.exchange.on.close] ${exchange.id} closed`);
+          this.$emit('connected', this.connected)
+        })
 
-					const index = this.connected.indexOf(exchange.id);
-					index >= 0 && this.connected.splice(index, 1);
+        exchange.on('close', (event) => {
+          console.log(`[socket.exchange.on.close] ${exchange.id} closed`)
 
-					this.$emit('connected', this.connected);
+          const index = this.connected.indexOf(exchange.id)
 
-					if (exchange.shouldBeConnected && options.disabled.indexOf(exchange) === -1) {
-						exchange.reconnect(options.pair);
-					}
-				});
+          index >= 0 && this.connected.splice(index, 1)
 
-				exchange.on('match', pair => {
-					console.log(`[socket.exchange.on.match] ${exchange.id} matched ${pair}`);
+          this.$emit('connected', this.connected)
 
-					this.matchs[exchange.id] = pair;
-				});
+          if (exchange.shouldBeConnected && options.disabled.indexOf(exchange) === -1) {
+            exchange.reconnect(options.pair)
+          }
+        })
 
-				exchange.on('error', event => {
-					console.log(`[socket.exchange.on.error] ${exchange.id} reported an error`);
+        exchange.on('match', (pair) => {
+          console.log(`[socket.exchange.on.match] ${exchange.id} matched ${pair}`)
 
-					if (!this.errors[exchange.id]) {
-						this.errors[exchange.id] = 0;
-					}
+          this.matchs[exchange.id] = pair
+        })
 
-					this.errors[exchange.id]++;
+        exchange.on('error', (event) => {
+          console.log(`[socket.exchange.on.error] ${exchange.id} reported an error`)
 
-					this.$emit('exchange_error', exchange.id, this.errors[exchange.id]);
-				});
-			});
+          if (!this.errors[exchange.id]) {
+            this.errors[exchange.id] = 0
+          }
 
-			this.connectExchanges();
+          this.errors[exchange.id]++
 
-			setInterval(() => {
-				if (!this.queue.length) {
-					return;
-				}
+          this.$emit('exchange_error', exchange.id, this.errors[exchange.id])
+        })
+      })
 
-				this.trades = this.trades.concat(this.queue);
-				
-				this.$emit('trades', this.queue.filter(a => options.filters.indexOf(a[0]) === -1));
+      this.connectExchanges()
 
-				this.queue = [];
-			}, 200);
-		},
-		connectExchanges(pair = null) {
-			this.disconnectExchanges();
+      setInterval(() => {
+        if (!this.queue.length) {
+          return
+        }
 
-			if (pair) {
-				options.pair = pair;
-			}
+        this.trades = this.trades.concat(this.queue)
 
-			this.trades = [];
+        this.$emit('trades', this.queue.filter((a) => options.filters.indexOf(a[0]) === -1))
 
-			console.log(`[socket.connect] connecting to "${options.pair}"`);
+        this.queue = []
+      }, 200)
+    },
+    connectExchanges (pair = null) {
+      this.disconnectExchanges()
 
-			this.$emit('alert', {
-				id: `server_status`,
-				type: 'info',
-				title: `Loading`,
-				message: `Fetching products...`
-			});
+      if (pair) {
+        options.pair = pair
+      }
 
-			Promise.all(exchanges.map(exchange => exchange.validatePair(options.pair))).then(() => {
-				let validExchanges = exchanges.filter(exchange => exchange.valid);
+      this.trades = []
 
-				this.$emit('alert', {
-					id: `server_status`,
-					type: 'info',
-					title: `Loading`,
-					message: `Matching "${pair}" exchanges...`
-				});
+      console.log(`[socket.connect] connecting to "${options.pair}"`)
 
-				if (!validExchanges.length) {
-					return;
-				}
+      this.$emit('alert', {
+        id: 'server_status',
+        type: 'info',
+        title: 'Loading',
+        message: 'Fetching ASSETS...',
+      })
 
-				if (this.pair !== options.pair) {
-					this.$emit('pairing', options.pair, this.canFetch());
+      Promise.all(exchanges.map((exchange) => exchange.validatePair(options.pair))).then(() => {
+        let validExchanges = exchanges.filter((exchange) => exchange.valid)
 
-					this.pair = options.pair;
-				}
+        this.$emit('alert', {
+          id: 'server_status',
+          type: 'info',
+          title: 'Loading',
+          message: `Matching "${pair}" exchanges...`,
+        })
 
-				validExchanges = validExchanges.filter(exchange => options.disabled.indexOf(exchange.id) === -1);
+        if (!validExchanges.length) {
+          return
+        }
 
-				console.log(`[socket.connect] ${validExchanges.length} successfully matched with "${options.pair}"`);
+        if (this.pair !== options.pair) {
+          this.$emit('pairing', options.pair, this.canFetch())
 
-				if (this.canFetch()) {
-					this.$emit('alert', {
-						id: `server_status`,
-						type: 'info',
-						title: `Loading`,
-						message: 'Fetch last 60s...'
-					});
-				}
+          this.pair = options.pair
+        }
 
-				this.fetchHistoricalData(1, null, true).then(data => {
-					console.log(`[socket.connect] connect exchanges asynchronously`);
+        validExchanges = validExchanges.filter((exchange) => options.disabled.indexOf(exchange.id) === -1)
 
-					validExchanges.forEach(exchange => exchange.connect());
+        console.log(`[socket.connect] ${validExchanges.length} successfully matched with "${options.pair}"`)
 
-					this.$emit('alert', {
-						id: `server_status`,
-					});
-				})
-			});
-		},
-		disconnectExchanges() {
-			console.log(`[socket.connect] disconnect exchanges asynchronously`);
+        if (this.canFetch()) {
+          this.$emit('alert', {
+            id: 'server_status',
+            type: 'info',
+            title: 'Loading',
+            message: 'Fetch last 60s...',
+          })
+        }
 
-			exchanges.forEach(exchange => exchange.disconnect());
-		},
-		trimTradesData(timestamp) {
-			let index;
+        this.fetchHistoricalData(1, null, true).then((data) => {
+          console.log('[socket.connect] connect exchanges asynchronously')
 
-			for (index = this.trades.length - 1; index >= 0; index--) {
-				if (this.trades[index][1] < timestamp) {
-					break;
-				}
-			}
+          validExchanges.forEach((exchange) => exchange.connect())
 
-			if (index < 0) {
-				return;
-			}
+          this.$emit('alert', {
+            id: 'server_status',
+          })
+        })
+      })
+    },
+    disconnectExchanges () {
+      console.log('[socket.connect] disconnect exchanges asynchronously')
 
-			console.log(`[socket.trim] wipe ${index + 1} trades from memory`);
+      exchanges.forEach((exchange) => exchange.disconnect())
+    },
+    trimTradesData (timestamp) {
+      let index
 
-			this.trades.splice(0, ++index);
+      for (index = this.trades.length - 1; index >= 0; index--) {
+        if (this.trades[index][1] < timestamp) {
+          break
+        }
+      }
 
-			this.$emit('trim', timestamp);
-		},
-		getExchangeById(id) {
-			for (let exchange of exchanges) {
-				if (exchange.id === id) {
-					return exchange;
-				}
-			}
+      if (index < 0) {
+        return
+      }
 
-			return null;
-		},
-		canFetch() {
-			return this.API_URL && /btcusd/i.test(options.pair);
-		},
-		fetchHistoricalData(from, to = null, willReplace = false) {
-			if (!from || !this.canFetch()) {
-				return Promise.resolve();
-			}
+      console.log(`[socket.trim] wipe ${index + 1} trades from memory`)
 
-			console.log(`[socket.fetch] retrieve ${(to ? (to - from) / 1000 / 60 : from).toFixed(2)} minute(s) of trades`);
+      this.trades.splice(0, ++index)
 
-			const url = `${process.env.API_URL ? process.env.API_URL : ''}/history/${parseInt(from)}${to ? '/' + parseInt(to) : ''}`;
+      this.$emit('trim', timestamp)
+    },
+    getExchangeById (id) {
+      for (const exchange of exchanges) {
+        if (exchange.id === id) {
+          return exchange
+        }
+      }
 
-			if (this.lastFetchUrl === url) {
-				return Promise.resolve();
-			}
+      return null
+    },
+    canFetch () {
+      return this.API_URL && /btcusd/i.test(options.pair)
+    },
+    fetchHistoricalData (from, to = null, willReplace = false) {
+      if (!from || !this.canFetch()) {
+        return Promise.resolve()
+      }
 
-			this.lastFetchUrl = url;
+      console.log(`[socket.fetch] retrieve ${(to ? (to - from) / 1000 / 60 : from).toFixed(2)} minute(s) of trades`)
 
-			return new Promise((resolve, reject) => {
-				Axios.get(url, {
-					onDownloadProgress: e => this.$emit('fetchProgress', {
-						loaded: e.loaded,
-						total: e.total,
-						progress: e.loaded / e.total
-					})
-				})
-					.then(response => {
-						const trades = response.data;
-						const count = this.trades.length;
+      const url = `${process.env.API_URL ? process.env.API_URL : ''}/history/${parseInt(from)}${to ? `/${parseInt(to)}` : ''}`
 
-						if (this.delayed) {
-							for (let i = 0; i < trades.length; i++) {
-								trades[i][1] -= this.delay;
-							}
-						}
+      if (this.lastFetchUrl === url) {
+        return Promise.resolve()
+      }
 
-						if (willReplace || !this.trades || !this.trades.length) {
-							this.trades = trades;
-						} else {
-							const prepend = trades.filter(trade => trade[1] <= this.trades[0][1]);
-							const append = trades.filter(trade => trade[1] >= this.trades[this.trades.length - 1][1]);
+      this.lastFetchUrl = url
 
-							if (prepend.length) {
-								this.trades = prepend.concat(this.trades);
-							}
+      return new Promise((resolve, reject) => {
+        Axios.get(url, {
+          onDownloadProgress: (e) => this.$emit('fetchProgress', {
+            loaded: e.loaded,
+            total: e.total,
+            progress: e.loaded / e.total,
+          }),
+        })
+          .then((response) => {
+            const trades = response.data
+            const count = this.trades.length
 
-							if (append.length) {
-								this.trades = this.trades.concat(append);
-							}
-						}
+            if (this.delayed) {
+              for (let i = 0; i < trades.length; i++) {
+                trades[i][1] -= this.delay
+              }
+            }
 
-						if (count !== this.trades.length) {
-							this.$emit('historical', willReplace);
-						}
+            if (willReplace || !this.trades || !this.trades.length) {
+              this.trades = trades
+            }
+            else {
+              const prepend = trades.filter((trade) => trade[1] <= this.trades[0][1])
+              const append = trades.filter((trade) => trade[1] >= this.trades[this.trades.length - 1][1])
 
-						resolve(trades);
-					})
-					.catch(err => {
-						err && this.$emit('alert', {
-							type: 'error',
-							title: `Unable to retrieve history`,
-							message: err.response && err.response.data && err.response.data.error ? err.response.data.error : err.message,
-							id: `fetch_error`
-						});
+              if (prepend.length) {
+                this.trades = prepend.concat(this.trades)
+              }
 
-						resolve();
-					})
-			});
-		}
-	}
-});
+              if (append.length) {
+                this.trades = this.trades.concat(append)
+              }
+            }
 
-export default emitter;
+            if (count !== this.trades.length) {
+              this.$emit('historical', willReplace)
+            }
+
+            resolve(trades)
+          })
+          .catch((err) => {
+            err && this.$emit('alert', {
+              type: 'error',
+              title: 'Unable to retrieve history',
+              message: err.response && err.response.data && err.response.data.error ? err.response.data.error : err.message,
+              id: 'fetch_error',
+            })
+
+            resolve()
+          })
+      })
+    },
+  },
+})
+
+export default emitter

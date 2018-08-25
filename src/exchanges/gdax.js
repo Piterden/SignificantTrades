@@ -1,82 +1,84 @@
 import Exchange from '../services/exchange'
 
+
 class Gdax extends Exchange {
+  constructor (options) {
+    super(options)
 
-	constructor(options) {
-		super(options);
+    this.id = 'gdax'
 
-		this.id = 'gdax';
+    this.endpoints = {
+      ASSETS: 'https://api.pro.coinbase.com/ASSETS',
+      TRADES: () => `https://api.pro.coinbase.com/ASSETS/${this.pair}/trades`,
+    }
 
-		this.endpoints = {
-			PRODUCTS: 'https://api.pro.coinbase.com/products',
-			TRADES: () => `https://api.pro.coinbase.com/products/${this.pair}/trades`
-		}
+    this.matchPairName = (pair) => {
+      pair = `${pair.substr(0, 3)}-${pair.substr(3, pair.length)}`
 
-		this.matchPairName = pair => {
-			pair = pair.substr(0, 3) + '-' + pair.substr(3, pair.length);
+      if (this.pairs.indexOf(pair) !== -1) {
+        return pair
+      }
 
-			if (this.pairs.indexOf(pair) !== -1) {
-				return pair;
-			}
+      return false
+    }
 
-			return false;
-		}
+    this.options = Object.assign({
+      url: 'wss://ws-feed.pro.coinbase.com',
+    }, this.options)
+  }
 
-		this.options = Object.assign({
-			url: 'wss://ws-feed.pro.coinbase.com',
-		}, this.options);
-	}
+  connect () {
+    if (!super.connect()) {
+      return
+    }
 
-	connect() {
-		if (!super.connect())
-			return;
+    this.api = new WebSocket(this.getUrl())
+    this.api.addEventListener('message', (event) => {
+      if (!event) {
+        return
+      }
 
-		this.api = new WebSocket(this.getUrl());
-		this.api.onmessage = event => {
-			if (!event) {
-				return;
-			}
+      const obj = JSON.parse(event.data)
 
-			let obj = JSON.parse(event.data);
+      if (obj && obj.type === 'match') {
+        this.emitTrades([[
+          this.id,
+          +new Date(obj.time),
+          +obj.price,
+          +obj.size,
+          obj.side === 'buy' ? 0 : 1,
+        ]])
+      }
+    })
 
-			if (obj && obj.type === 'match') {
-				this.emitTrades([[
-					this.id,
-					+new Date(obj.time),
-					+obj.price,
-					+obj.size,
-					obj.side === 'buy' ? 0 : 1,
-				]]);
-			}
-		};
+    this.api.addEventListener('open', (event) => {
+      this.api.send(JSON.stringify({
+        type: 'subscribe',
+        channels: [{ name: 'full', product_ids: [this.pair] }],
+      }))
 
-		this.api.onopen = event => {
-			this.api.send(JSON.stringify({
-				type: 'subscribe',
-				channels: [{ 'name': 'full', 'product_ids': [this.pair] }]
-			}));
+      this.emitOpen(event)
+    })
 
-			this.emitOpen(event);
-		};
+    this.api.onclose = this.emitClose.bind(this)
+    this.api.addEventListener('error', this.emitError.bind(this))
+  }
 
-		this.api.onclose = this.emitClose.bind(this);
-		this.api.onerror = this.emitError.bind(this);
-	}
+  disconnect () {
+    if (!super.disconnect()) {
+      return
+    }
 
-	disconnect() {
-		if (!super.disconnect())
-			return;
+    if (this.api && this.api.readyState < 2) {
+      this.api.close()
+    }
+  }
 
-		if (this.api && this.api.readyState < 2) {
-			this.api.close();
-		}
-	}
+  formatASSETS (data) {
+    return data.map((a) => a.id)
+  }
 
-	formatProducts(data) {
-		return data.map(a => a.id);
-	}
-
-	/* formatRecentsTrades(response) {
+  /* formatRecentsTrades(response) {
 		if (response && response.length) {
 			return response.map(trade => [
 				this.id,
@@ -87,7 +89,6 @@ class Gdax extends Exchange {
 			])
 		}
 	} */
-
 }
 
-export default Gdax;
+export default Gdax

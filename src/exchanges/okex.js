@@ -1,120 +1,123 @@
 import Exchange from '../services/exchange'
 
+
 class Okex extends Exchange {
+  constructor (options) {
+    super(options)
 
-	constructor(options) {
-		super(options);
+    this.id = 'okex'
 
-		this.id = 'okex';
+    this.endpoints = {
+      ASSETS: [
+        'https://www.okex.com/api/v1/tickers.do',
+        'POST|https://www.okex.com/v2/futures/pc/market/futuresCoin.do',
+      ],
+      TRADES: () => `https://www.okex.com/api/v1/trades.do?symbol=${this.pair}`,
+    }
 
-		this.endpoints = {
-			PRODUCTS: [
-				'https://www.okex.com/api/v1/tickers.do',
-				'POST|https://www.okex.com/v2/futures/pc/market/futuresCoin.do',
-			],
-			TRADES: () => `https://www.okex.com/api/v1/trades.do?symbol=${this.pair}`
-		}
+    this.matchPairName = (pair) => {
+      if (this.pairs.spots[pair]) {
+        this.type = 'spot'
+        return this.pairs.spots[pair]
+      }
+      else if (this.pairs.futures[pair]) {
+        this.type = 'futures'
+        return this.pairs.futures[pair]
+      }
 
-		this.matchPairName = pair => {
-			if (this.pairs.spots[pair]) {
-				this.type = 'spot';
-				return this.pairs.spots[pair];
-			} else if (this.pairs.futures[pair]) {
-				this.type = 'futures';
-				return this.pairs.futures[pair];
-			}
+      return false
+    }
 
-			return false;
-		}
+    this.options = Object.assign({
+      url: () => {
+        if (this.type === 'futures') {
+          return 'wss://real.okex.com:10440/websocket/okexapi'
+        }
+        return 'wss://real.okex.com:10441/websocket'
+      },
+    }, this.options)
+  }
 
-		this.options = Object.assign({
-			url: () => {
-				if (this.type === 'futures') {
-					return 'wss://real.okex.com:10440/websocket/okexapi';
-				} else {
-					return 'wss://real.okex.com:10441/websocket';
-				}
-			}
-		}, this.options);
-	}
+  connect () {
+    if (!super.connect()) {
+      return
+    }
 
-	connect() {
-		if (!super.connect())
-			return;
+    this.api = new WebSocket(this.getUrl())
 
-		this.api = new WebSocket(this.getUrl());
+    this.api.addEventListener('message', (event) => this.emitTrades(this.formatLiveTrades(JSON.parse(event.data))))
 
-		this.api.onmessage = event => this.emitTrades(this.formatLiveTrades(JSON.parse(event.data)));
+    this.api.addEventListener('open', (event) => {
+      const channel = this.type === 'futures' ? `ok_sub_futureusd_${this.pair}` : `ok_sub_spot_${this.pair}_deals`
 
-		this.api.onopen = event => {
-			const channel = this.type === 'futures' ? 'ok_sub_futureusd_' + this.pair : 'ok_sub_spot_' + this.pair + '_deals';
+      this.api.send(JSON.stringify({
+        event: 'addChannel',
+        channel,
+      }))
 
-			this.api.send(JSON.stringify({
-				event: 'addChannel',
-				channel: channel
-			}));
+      this.keepalive = setInterval(() => {
+        this.api.send(JSON.stringify({ event: 'ping' }))
+      }, 30000)
 
-			this.keepalive = setInterval(() => {
-				this.api.send(JSON.stringify({ event: 'ping' }));
-			}, 30000);
+      this.emitOpen(event)
+    })
 
-			this.emitOpen(event);
-		};
+    this.api.onclose = (event) => {
+      this.emitClose(event)
 
-		this.api.onclose = event => {
-			this.emitClose(event);
+      clearInterval(this.keepalive)
+    }
 
-			clearInterval(this.keepalive);
-		};
+    this.api.addEventListener('error', this.emitError.bind(this))
+  }
 
-		this.api.onerror = this.emitError.bind(this);
-	}
+  disconnect () {
+    if (!super.disconnect()) {
+      return
+    }
 
-	disconnect() {
-		if (!super.disconnect())
-			return;
+    clearInterval(this.keepalive)
 
-		clearInterval(this.keepalive);
+    if (this.api && this.api.readyState < 2) {
+      this.api.close()
 
-		if (this.api && this.api.readyState < 2) {
-			this.api.close();
+      delete this.reference
+    }
+  }
 
-			delete this.reference;
-		}
-	}
+  formatLiveTrades (json) {
+    const initial = typeof this.reference === 'undefined'
 
-	formatLiveTrades(json) {
-		const initial = typeof this.reference === 'undefined';
+    if (!json || !json[0] || json[0].channel === 'addChannel') {
+      return
+    }
 
-		if (!json || !json[0] || json[0].channel === 'addChannel') {
-			return;
-		}
+    const base = new Date()
 
-		const base = new Date();
-		base.setTime(base.getTime() + ((8 + base.getTimezoneOffset() / 60) * 60 * 60 * 1000));
+    base.setTime(base.getTime() + ((8 + base.getTimezoneOffset() / 60) * 60 * 60 * 1000))
 
-		const output = json[0].data.map((trade, index, array) => {
-			const timestamp = +new Date(`${base.getFullYear()}-${pad(base.getMonth() + 1, 2)}-${base.getDate()}T${trade[3]}+08:00`);
+    const output = json[0].data.map((trade, index, array) => {
+      const timestamp = +new Date(`${base.getFullYear()}-${pad(base.getMonth() + 1, 2)}-${base.getDate()}T${trade[3]}+08:00`)
 
-			if (index === array.length - 1) {
-				this.reference = timestamp;
-			}
+      if (index === array.length - 1) {
+        this.reference = timestamp
+      }
 
-			return [
-				this.id,
-				timestamp,
-				+trade[1],
-				this.type === 'futures' ? trade[2] / trade[1] * 100 : +trade[2],
-				trade[4] === 'bid' ? 1 : 0
-			];
-		})
+      return [
+        this.id,
+        timestamp,
+        +trade[1],
+        this.type === 'futures' ? trade[2] / trade[1] * 100 : +trade[2],
+        trade[4] === 'bid' ? 1 : 0,
+      ]
+    })
 
-		if (!initial) {
-			return output;
-		}
-	}
+    if (!initial) {
+      return output
+    }
+  }
 
-	/* formatRecentsTrades(response) {
+  /* formatRecentsTrades(response) {
 		if (response && response.length) {
 			return response.map(trade => [
 				this.id,
@@ -126,35 +129,35 @@ class Okex extends Exchange {
 		}
 	} */
 
-	formatProducts(response) {
-		const output = {
-			futures: {},
-			spots: {}
-		};
+  formatASSETS (response) {
+    const output = {
+      futures: {},
+      spots: {},
+    }
 
-		const futuresContractsTypes = [
-			'this_week',
-			'next_week',
-			'quarter'
-		];
+    const futuresContractsTypes = [
+      'this_week',
+      'next_week',
+      'quarter',
+    ]
 
-		response.forEach(data => {
-			if (data && data.tickers && data.tickers.length) {
-				data.tickers.forEach(product => {
-					output.spots[product.symbol.split('_').join('').replace(/usdt$/, 'USD').toUpperCase()] = product.symbol;
-				});
-			} else if (data && data.msg === 'success' && data.data) {
-				data.data.forEach(product => {
-					product.contracts.forEach((contract, index) => {
-						output.futures[contract.desc] = product.symbolDesc.toLowerCase() + '_trade_' + futuresContractsTypes[index];
-					});
-				});
-			}
-		});
+    response.forEach((data) => {
+      if (data && data.tickers && data.tickers.length) {
+        data.tickers.forEach((product) => {
+          output.spots[product.symbol.split('_').join('').replace(/usdt$/, 'USD').toUpperCase()] = product.symbol
+        })
+      }
+      else if (data && data.msg === 'success' && data.data) {
+        data.data.forEach((product) => {
+          product.contracts.forEach((contract, index) => {
+            output.futures[contract.desc] = `${product.symbolDesc.toLowerCase()}_trade_${futuresContractsTypes[index]}`
+          })
+        })
+      }
+    })
 
-		return Object.keys(output.spots).length || Object.keys(output.spots).length ? output : [];
-	}
-
+    return Object.keys(output.spots).length || Object.keys(output.spots).length ? output : []
+  }
 }
 
-export default Okex;
+export default Okex
