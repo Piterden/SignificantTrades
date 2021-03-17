@@ -1,15 +1,17 @@
 <template>
-  <div
-    class="thresholds"
-    :class="{ '-dragging': dragging, '-rendering': rendering }"
-  >
-    <chrome-picker
+  <div class="thresholds" :class="{ '-dragging': dragging, '-rendering': rendering }">
+    <verte
       v-if="picking !== null"
+      :style="{ opacity: 0, position: 'absolute' }"
+      display="widget"
+      :draggable="true"
       ref="picker"
+      picker="square"
+      model="rgb"
+      :colorHistory="colors"
       :value="thresholds[picking.index][picking.side]"
       @input="updateColor"
-    ></chrome-picker>
-
+    ></verte>
     <table class="thresholds-table" v-if="showThresholdsAsTable">
       <tr v-for="(threshold, index) in thresholds" :key="`threshold-${index}`">
         <td class="thresholds-table__input">
@@ -18,24 +20,23 @@
             placeholder="Amount*"
             :value="thresholds[index].amount"
             @change="
-              $store.commit('setThresholdAmount', {
+              $store.commit('settings/SET_THRESHOLD_AMOUNT', {
                 index: index,
-                value: $event.target.value,
+                value: $event.target.value
               })
             "
           />
-          <i v-if="preferBaseCurrencySize" class="icon icon-commodity"></i>
-          <i v-else class="icon icon-currency"></i>
+          <i class="icon icon-currency"></i>
         </td>
         <td class="thresholds-table__input">
           <input
             type="text"
-            placeholder="Keyword"
+            placeholder="Giphy"
             :value="thresholds[index].gif"
             @change="
-              $store.commit('setThresholdGif', {
+              $store.commit('settings/SET_THRESHOLD_GIF', {
                 index: index,
-                value: $event.target.value,
+                value: $event.target.value
               })
             "
           />
@@ -50,6 +51,9 @@
           :style="{ backgroundColor: thresholds[index].sellColor }"
           @click="openPicker('sellColor', index, $event)"
         ></td>
+        <td class="thresholds-table__delete" @click="deleteThreshold(index)">
+          <i class="icon-cross"></i>
+        </td>
       </tr>
     </table>
 
@@ -75,47 +79,43 @@
         ref="thresholdPanel"
         :class="{ '-minimum': selectedIndex === 0 }"
         :style="{
-          transform: 'translateX(' + this.panelOffsetPosition + 'px)',
+          transform: 'translateX(' + this.panelOffsetPosition + 'px)'
         }"
       >
         <div
           class="threshold-panel__caret"
           :style="{
-            transform: 'translateX(' + this.panelCaretPosition + 'px)',
+            transform: 'translateX(' + this.panelCaretPosition + 'px)'
           }"
         ></div>
-        <a
-          href="#"
-          class="threshold-panel__close icon-cross"
-          @click=";(selectedIndex = null), (editing = false), (picking = null)"
-        ></a>
+        <a href="#" class="threshold-panel__close icon-cross" @click=";(selectedIndex = null), (editing = false), (picking = null)"></a>
         <h3>
           if amount >
           <editable
             :content="thresholds[selectedIndex].amount"
             @output="
-              $store.commit('setThresholdAmount', {
+              $store.commit('settings/SET_THRESHOLD_AMOUNT', {
                 index: selectedIndex,
-                value: $event,
+                value: $event
               })
             "
           ></editable>
         </h3>
         <div class="form-group mb8 threshold-panel__gif">
           <label>Show themed gif</label>
-          <small class="help-text"
-            >Random gif based on
+          <small class="help-text">
+            Random gif based on
             <a href="https://gfycat.com" target="_blank">Gifycat</a>
-            keyword</small
-          >
+            keyword
+          </small>
           <input
             type="text"
             class="form-control"
             :value="thresholds[selectedIndex].gif"
             @change="
-              $store.commit('setThresholdGif', {
+              $store.commit('settings/SET_THRESHOLD_GIF', {
                 index: selectedIndex,
-                value: $event.target.value,
+                value: $event.target.value
               })
             "
           />
@@ -124,43 +124,35 @@
           <label>Custom colors</label>
           <small class="help-text">Will show colored line</small>
           <div class="column">
-            <div
-              class="form-group"
-              title="When buy"
-              v-tippy="{ placement: 'bottom' }"
-            >
+            <div class="form-group" title="When buy" v-tippy="{ placement: 'bottom' }">
               <input
                 type="text"
                 class="form-control"
                 :value="thresholds[selectedIndex].buyColor"
                 :style="{ backgroundColor: thresholds[selectedIndex].buyColor }"
                 @change="
-                  $store.commit('setThresholdColor', {
+                  $store.commit('settings/SET_THRESHOLD_COLOR', {
                     index: selectedIndex,
                     side: 'buyColor',
-                    value: $event.target.value,
+                    value: $event.target.value
                   })
                 "
                 @click="openPicker('buyColor', selectedIndex, $event)"
               />
             </div>
-            <div
-              class="form-group"
-              title="When sell"
-              v-tippy="{ placement: 'bottom' }"
-            >
+            <div class="form-group" title="When sell" v-tippy="{ placement: 'bottom' }">
               <input
                 type="text"
                 class="form-control"
                 :value="thresholds[selectedIndex].sellColor"
                 :style="{
-                  backgroundColor: thresholds[selectedIndex].sellColor,
+                  backgroundColor: thresholds[selectedIndex].sellColor
                 }"
                 @change="
-                  $store.commit('setThresholdColor', {
+                  $store.commit('settings/SET_THRESHOLD_COLOR', {
                     index: selectedIndex,
                     side: 'sellColor',
-                    value: $event.target.value,
+                    value: $event.target.value
                   })
                 "
                 @click="openPicker('sellColor', selectedIndex, $event)"
@@ -176,13 +168,11 @@
 <script>
 import { mapState } from 'vuex'
 
-import { Chrome } from 'vue-color'
+import { TOUCH_SUPPORTED } from '../utils/constants'
+import { formatPrice } from '../utils/helpers'
+import { PALETTE } from '../utils/colors'
 
 export default {
-  components: {
-    'chrome-picker': Chrome,
-  },
-
   data() {
     return {
       rendering: true,
@@ -192,32 +182,27 @@ export default {
       selectedIndex: null,
       selectedElement: null,
       panelCaretPosition: 0,
-      panelOffsetPosition: 0,
+      panelOffsetPosition: 0
     }
   },
 
   computed: {
-    ...mapState([
-      'thresholds',
-      'showThresholdsAsTable',
-      'preferBaseCurrencySize',
-    ]),
+    ...mapState('settings', ['thresholds', 'showThresholdsAsTable', 'preferQuoteCurrencySize']),
+    colors: () => PALETTE
   },
 
   created() {
-    this.onStoreMutation = this.$store.subscribe((mutation, state) => {
+    this.onStoreMutation = this.$store.subscribe(mutation => {
       switch (mutation.type) {
-        case 'toggleSettingsPanel':
-        case 'toggleTresholdsTable':
+        case 'settings/TOGGLE_SETTINGS_PANEL':
+        case 'settings/TOGGLE_THRESHOLDS_TABLE':
           if (this.picking) {
             this.closePicker(event)
           }
 
           if (
-            (mutation.type === 'toggleSettingsPanel' &&
-              mutation.payload === 'thresholds') ||
-            (mutation.type === 'toggleTresholdsTable' &&
-              mutation.payload === false)
+            (mutation.type === 'settings/TOGGLE_SETTINGS_PANEL' && mutation.payload === 'thresholds') ||
+            (mutation.type === 'settings/TOGGLE_THRESHOLDS_TABLE' && mutation.payload === false)
           ) {
             this.rendering = true
 
@@ -227,12 +212,15 @@ export default {
             }, 100)
           }
           break
-        case 'setThresholdAmount':
+        case 'settings/SET_THRESHOLD_AMOUNT':
           this.reorderThresholds()
           this.refreshHandlers()
           break
-        case 'setThresholdColor':
+        case 'settings/SET_THRESHOLD_COLOR':
           this.refreshGradients()
+          break
+        case 'settings/ADD_THRESHOLD':
+          this.refreshHandlers()
           break
       }
     })
@@ -246,27 +234,15 @@ export default {
 
     this._startDrag = this.startDrag.bind(this)
 
-    this.$el.addEventListener(
-      this.$root.isTouchSupported ? 'touchstart' : 'mousedown',
-      this._startDrag,
-      false
-    )
+    this.$el.addEventListener(TOUCH_SUPPORTED ? 'touchstart' : 'mousedown', this._startDrag, false)
 
     this._doDrag = this.doDrag.bind(this)
 
-    window.addEventListener(
-      this.$root.isTouchSupported ? 'touchmove' : 'mousemove',
-      this._doDrag,
-      false
-    )
+    window.addEventListener(TOUCH_SUPPORTED ? 'touchmove' : 'mousemove', this._doDrag, false)
 
     this._endDrag = this.endDrag.bind(this)
 
-    window.addEventListener(
-      this.$root.isTouchSupported ? 'touchend' : 'mouseup',
-      this._endDrag,
-      false
-    )
+    window.addEventListener(TOUCH_SUPPORTED ? 'touchend' : 'mouseup', this._endDrag, false)
 
     this._doResize = this.refreshHandlers.bind(this)
 
@@ -274,14 +250,8 @@ export default {
   },
 
   beforeDestroy() {
-    window.removeEventListener(
-      this.$root.isTouchSupported ? 'touchmove' : 'mousemove',
-      this._doDrag
-    )
-    window.removeEventListener(
-      this.$root.isTouchSupported ? 'touchend' : 'mouseup',
-      this._endDrag
-    )
+    window.removeEventListener(TOUCH_SUPPORTED ? 'touchmove' : 'mousemove', this._doDrag)
+    window.removeEventListener(TOUCH_SUPPORTED ? 'touchend' : 'mouseup', this._endDrag)
     window.removeEventListener('resize', this._doResize)
 
     this.onStoreMutation()
@@ -299,9 +269,7 @@ export default {
         x = event.touches[0].pageX
       }
 
-      this.selectedIndex = Array.prototype.slice
-        .call(event.target.parentNode.children)
-        .indexOf(event.target)
+      this.selectedIndex = Array.prototype.slice.call(event.target.parentNode.children).indexOf(event.target)
 
       if (this.selectedIndex > -1) {
         this.selectedElement = event.target
@@ -311,7 +279,7 @@ export default {
 
       this.dragStartedAt = {
         timestamp: +new Date(),
-        position: x,
+        position: x
       }
     },
 
@@ -325,8 +293,7 @@ export default {
       if (
         this.selectedElement === null ||
         !this.dragStartedAt ||
-        (new Date() - this.dragStartedAt.timestamp < 1000 &&
-          Math.abs(this.dragStartedAt.position - x) < 3)
+        (new Date() - this.dragStartedAt.timestamp < 1000 && Math.abs(this.dragStartedAt.position - x) < 3)
       ) {
         return
       }
@@ -336,26 +303,14 @@ export default {
       const minLog = Math.max(0, Math.log(this.minimum + 1) || 0)
       const minLeft = (minLog / Math.log(this.maximum + 1)) * this.width
 
-      let left = Math.max(
-        (this.width / 3) * -1,
-        Math.min(this.width * 1.5, x - this.offsetLeft)
-      )
-      let amount =
-        Math.exp(
-          ((minLeft + (left / this.width) * (this.width - minLeft)) /
-            this.width) *
-            Math.log(this.maximum + 1)
-        ) - 1
+      let left = Math.max((this.width / 3) * -1, Math.min(this.width * 1.5, x - this.offsetLeft))
+      let amount = Math.exp(((minLeft + (left / this.width) * (this.width - minLeft)) / this.width) * Math.log(this.maximum + 1)) - 1
 
       if (x < this.offsetLeft) {
-        amount =
-          this.thresholds[this.selectedIndex].amount -
-          (this.thresholds[this.selectedIndex].amount - amount) * 0.1
+        amount = this.thresholds[this.selectedIndex].amount - (this.thresholds[this.selectedIndex].amount - amount) * 0.1
         left = 0
       } else if (x > this.offsetLeft + this.width) {
-        amount =
-          this.thresholds[this.selectedIndex].amount -
-          (this.thresholds[this.selectedIndex].amount - amount) * 0.1
+        amount = this.thresholds[this.selectedIndex].amount - (this.thresholds[this.selectedIndex].amount - amount) * 0.1
         left = this.width
       }
 
@@ -367,17 +322,15 @@ export default {
 
       this.refreshCaretPosition()
 
-      this.thresholds[this.selectedIndex].amount = this.$root.formatPrice(
-        amount
-      )
+      this.thresholds[this.selectedIndex].amount = +formatPrice(amount)
     },
 
     endDrag(event) {
       if (this.selectedElement) {
         if (this.dragging) {
-          this.$store.commit('setThresholdAmount', {
+          this.$store.commit('settings/SET_THRESHOLD_AMOUNT', {
             index: this.selectedIndex,
-            value: this.thresholds[this.selectedIndex].amount,
+            value: this.thresholds[this.selectedIndex].amount
           })
         }
 
@@ -396,10 +349,14 @@ export default {
     },
 
     refreshHandlers() {
-      const amounts = this.thresholds.map((threshold) => threshold.amount)
+      const amounts = this.thresholds.map(threshold => threshold.amount)
 
       this.minimum = this.thresholds[0].amount
       this.maximum = Math.max.apply(null, amounts)
+
+      if (this.showThresholdsAsTable) {
+        return
+      }
 
       const bounds = this.$refs.thresholdContainer.getBoundingClientRect()
 
@@ -425,19 +382,20 @@ export default {
     },
 
     refreshCaretPosition(selectedElement = this.selectedElement) {
-      const left =
-        parseFloat(selectedElement.style.transform.replace(/[^\d.]/g, '')) || 0
+      const left = parseFloat(selectedElement.style.transform.replace(/[^\d.]/g, '')) || 0
       const panelWidth = this.$refs.thresholdPanel.clientWidth
       const caretMargin = 12
       const panelRange = (this.width - panelWidth) / 2 + caretMargin
 
-      this.panelOffsetPosition =
-        -panelRange + panelRange * 2 * (left / this.width)
-      this.panelCaretPosition =
-        caretMargin + (panelWidth - caretMargin * 2) * (left / this.width)
+      this.panelOffsetPosition = -panelRange + panelRange * 2 * (left / this.width)
+      this.panelCaretPosition = caretMargin + (panelWidth - caretMargin * 2) * (left / this.width)
     },
 
     refreshGradients() {
+      if (this.showThresholdsAsTable) {
+        return
+      }
+
       const minLog = Math.max(0, Math.log(this.minimum + 1) || 0)
       const maxLog = Math.log(this.maximum + 1)
 
@@ -450,22 +408,14 @@ export default {
             ? 0
             : i === this.thresholds.length - 1
             ? 100
-            : (
-                ((Math.log(this.thresholds[i].amount + 1) - minLog) /
-                  (maxLog - minLog)) *
-                100
-              ).toFixed(2)
+            : (((Math.log(this.thresholds[i].amount + 1) - minLog) / (maxLog - minLog)) * 100).toFixed(2)
 
         buysStops.push(`${this.thresholds[i].buyColor} ${percent}%`)
         sellsStops.push(`${this.thresholds[i].sellColor} ${percent}%`)
       }
 
-      this.$refs.buysGradient.style.backgroundImage = `linear-gradient(to right, ${buysStops.join(
-        ', '
-      )})`
-      this.$refs.sellsGradient.style.backgroundImage = `linear-gradient(to right, ${sellsStops.join(
-        ', '
-      )})`
+      this.$refs.buysGradient.style.backgroundImage = `linear-gradient(to right, ${buysStops.join(', ')})`
+      this.$refs.sellsGradient.style.backgroundImage = `linear-gradient(to right, ${sellsStops.join(', ')})`
     },
 
     reorderThresholds() {
@@ -475,36 +425,35 @@ export default {
         selectedThreshold = this.thresholds[this.selectedIndex]
       }
 
-      this.$store.state.thresholds = this.thresholds.sort(
-        (a, b) => a.amount - b.amount
-      )
+      this.$store.state.thresholds = this.thresholds.sort((a, b) => a.amount - b.amount)
 
       if (selectedThreshold) {
         for (let i = 0; i < this.thresholds.length; i++) {
-          if (
-            selectedThreshold.amount === this.thresholds[i].amount &&
-            selectedThreshold.gif === this.thresholds[i].gif
-          ) {
+          if (selectedThreshold.amount === this.thresholds[i].amount && selectedThreshold.gif === this.thresholds[i].gif) {
             this.selectedIndex = i
           }
         }
       }
     },
 
+    deleteThreshold(index) {
+      if (this.thresholds.length <= 2) {
+        return
+      }
+
+      this.$store.commit('settings/DELETE_THRESHOLD', index)
+    },
+
     openPicker(side, index, event) {
-      if (
-        this.picking &&
-        this.picking.index === index &&
-        this.picking.side === side
-      ) {
+      if (this.picking && this.picking.index === index && this.picking.side === side) {
         return this.closePicker(event)
       }
 
       if (!this.thresholds[index][side]) {
-        this.$store.commit('setThresholdColor', {
+        this.$store.commit('settings/SET_THRESHOLD_COLOR', {
           index: index,
           side: side,
-          value: '#ffffff',
+          value: '#ffffff'
         })
       }
 
@@ -524,32 +473,37 @@ export default {
           8,
           Math.min(
             this.$el.clientWidth - this.$refs.picker.$el.clientWidth - 8,
-            targetBounds.left +
-              targetBounds.width -
-              containerBounds.left -
-              this.$refs.picker.$el.clientWidth
+            targetBounds.left + targetBounds.width - containerBounds.left - this.$refs.picker.$el.clientWidth
           )
         )
-        let top =
-          targetBounds.top -
-          containerBounds.top +
-          event.target.clientHeight * 1.3
+        let top = targetBounds.top - containerBounds.top + event.target.clientHeight * 1.3
 
         this.$refs.picker.$el.style.top = top + 'px'
         this.$refs.picker.$el.style.left = left + 'px'
+        this.$refs.picker.$el.style.position = 'absolute'
         this.$refs.picker.$el.style.opacity = 1
+        this.$refs.picker.$el.style.zIndex = 10
 
         this.$refs.picker.fieldsIndex = 1
       }, 100)
 
       event.stopPropagation()
+
+      if (!this._clickOutsideHandler) {
+        this._clickOutsideHandler = (event => {
+          if (!this.$refs.picker.$el.contains(event.target)) {
+            this.closePicker()
+          }
+        }).bind(this)
+
+        document.addEventListener('mousedown', this._clickOutsideHandler)
+      }
     },
 
-    closePicker(event) {
-      if (this.$refs.picker && this.$refs.picker.$el.contains(event.target)) {
-        event.preventDefault()
-
-        return
+    closePicker() {
+      if (this._clickOutsideHandler) {
+        document.removeEventListener('mousedown', this._clickOutsideHandler)
+        delete this._clickOutsideHandler
       }
 
       this.picking.target.classList.remove('-active')
@@ -558,25 +512,21 @@ export default {
     },
 
     updateColor(color) {
-      if (!this.picking) {
+      if (!this.picking || this.thresholds[this.picking.index][`${this.picking.side}Color`] === color) {
         return
       }
-
-      this.$store.commit('setThresholdColor', {
+      console.log(this.thresholds[this.picking.index][`${this.picking.side}Color`])
+      this.$store.commit('settings/SET_THRESHOLD_COLOR', {
         index: this.picking.index,
         side: this.picking.side,
-        value: `rgba(${color.rgba.r}, ${color.rgba.g}, ${color.rgba.b}, ${
-          color.rgba.a
-        })`,
+        value: color
       })
-    },
-  },
+    }
+  }
 }
 </script>
 
 <style lang="scss">
-@import '../assets/sass/variables';
-
 .thresholds {
   position: relative;
   z-index: 1;
@@ -607,9 +557,13 @@ export default {
     opacity: 0;
     transition: all 0.2s $easeOutExpo;
 
+    .vc-chrome-fields .vc-input__label {
+      font-family: monospace;
+    }
+
     .vc-input__input {
       background: none;
-      border: 2px solid white;
+      border: 1px solid white;
       border-radius: 2px;
       color: white;
       box-shadow: none;
@@ -738,6 +692,23 @@ export default {
       box-shadow: 0 0 0 0.5em rgba(white, 0.2);
       position: relative;
       z-index: 1;
+    }
+  }
+
+  &__delete {
+    cursor: pointer;
+    padding: 0.5em 0 0.5em 0.5em;
+
+    opacity: 0.5;
+
+    &:hover {
+      opacity: 1;
+    }
+
+    &.-disabled {
+      opacity: 0.5;
+
+      cursor: not-allowed;
     }
   }
 }

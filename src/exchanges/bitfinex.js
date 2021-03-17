@@ -8,12 +8,11 @@ class Bitfinex extends Exchange {
 
     this.endpoints = {
       PRODUCTS: 'https://api.bitfinex.com/v1/symbols',
-      TRADES: () =>
-        `https://api.bitfinex.com/v2/trades/t${this.pair}/hist?limit=1000`,
+      TRADES: () => `https://api.bitfinex.com/v2/trades/t${this.pair}/hist?limit=1000`
     }
 
-    this.matchPairName = (pair) => {
-      if (this.pairs.indexOf(pair) !== -1) {
+    this.matchPairName = pair => {
+      if (this.products.indexOf(pair) !== -1) {
         return pair
       }
 
@@ -22,35 +21,43 @@ class Bitfinex extends Exchange {
 
     this.options = Object.assign(
       {
-        url: 'wss://api.bitfinex.com/ws/2',
+        url: 'wss://api.bitfinex.com/ws/2'
       },
       this.options
     )
+
+    this.initialize()
   }
 
   connect() {
-    if (!super.connect()) return
+    const validation = super.connect()
+    if (!validation) return Promise.reject()
+    else if (validation instanceof Promise) return validation
 
-    this.api = new WebSocket(this.getUrl())
+    return new Promise((resolve, reject) => {
+      this.api = new WebSocket(this.getUrl())
 
-    this.api.onmessage = (event) =>
-      this.emitTrades(this.formatLiveTrades(JSON.parse(event.data)))
+      this.api.onmessage = event => this.queueTrades(this.formatLiveTrades(JSON.parse(event.data)))
+      this.api.onopen = e => {
+        this.api.send(
+          JSON.stringify({
+            event: 'subscribe',
+            channel: 'trades',
+            symbol: 't' + this.pair
+          })
+        )
 
-    this.api.onopen = (event) => {
-      this.api.send(
-        JSON.stringify({
-          event: 'subscribe',
-          channel: 'trades',
-          symbol: 't' + this.pair,
-        })
-      )
+        this.emitOpen(e)
 
-      this.emitOpen(event)
-    }
+        resolve()
+      }
+      this.api.onclose = this.emitClose.bind(this)
+      this.api.onerror = () => {
+        this.emitError({ message: `${this.id} disconnected` })
 
-    this.api.onclose = this.emitClose.bind(this)
-
-    this.api.onerror = this.emitError.bind(this, { message: 'Websocket error' })
+        reject()
+      }
+    })
   }
 
   disconnect() {
@@ -67,13 +74,13 @@ class Bitfinex extends Exchange {
     }
 
     return [
-      [
-        this.id,
-        +new Date(json[2][1]),
-        +json[2][3],
-        Math.abs(json[2][2]),
-        json[2][2] < 0 ? 0 : 1,
-      ],
+      {
+        exchange: this.id,
+        timestamp: +new Date(json[2][1]),
+        price: +json[2][3],
+        size: Math.abs(json[2][2]),
+        side: json[2][2] < 0 ? 'sell' : 'buy'
+      }
     ]
   }
 
@@ -92,7 +99,7 @@ class Bitfinex extends Exchange {
     } */
 
   formatProducts(data) {
-    return data.map((a) => a.toUpperCase())
+    return data.map(a => a.toUpperCase())
   }
 }
 

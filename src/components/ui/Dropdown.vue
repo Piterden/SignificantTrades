@@ -1,10 +1,7 @@
 <template>
   <div class="dropdown">
-    <div
-      class="dropdown__selected"
-      @click="toggle"
-      v-html="options[selected]"
-    ></div>
+    <div v-if="label" class="dropdown__label" @click="toggle" v-html="label"></div>
+    <div class="dropdown__selected" @click="toggle" v-html="options[selected] || placeholder || 'Selection'"></div>
     <div class="dropdown__options" v-show="isOpen">
       <div
         class="dropdown__option"
@@ -20,38 +17,59 @@
 
 <script>
 export default {
-  props: ['options', 'selected'],
+  props: ['options', 'label', 'selected', 'placeholder'],
 
   data() {
     return {
-      isOpen: false,
-    }
-  },
-
-  created() {
-    if (!this.selected) {
-      this.selected = Object.keys(this.options)[0]
+      isOpen: false
     }
   },
 
   methods: {
     toggle() {
-      this.isOpen = !this.isOpen
+      if (!this.isOpen) {
+        this.show()
+      } else {
+        this.hide()
+      }
     },
 
     show() {
       this.isOpen = true
+
+      this.bindClickOutside()
     },
 
     hide() {
       this.isOpen = false
+
+      this.unbindClickOutside()
+    },
+
+    bindClickOutside() {
+      if (!this._clickOutsideHandler) {
+        this._clickOutsideHandler = (event => {
+          if (!this.$el.contains(event.target)) {
+            this.hide()
+          }
+        }).bind(this)
+
+        document.addEventListener('mousedown', this._clickOutsideHandler)
+      }
+    },
+
+    unbindClickOutside() {
+      if (this._clickOutsideHandler) {
+        document.removeEventListener('mousedown', this._clickOutsideHandler)
+        delete this._clickOutsideHandler
+      }
     },
 
     set(index) {
       this.selected = index
       this.$emit('output', index)
       this.hide()
-    },
-  },
+    }
+  }
 }
 </script>

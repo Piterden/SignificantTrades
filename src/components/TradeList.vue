@@ -1,111 +1,82 @@
 <template>
-  <div id="trades" class="trades" :class="{ '-logos': this.showLogos }">
-    <ul v-if="trades.length">
-      <li
-        v-for="trade in trades"
-        class="trades__item"
-        :key="trade.id"
-        :class="trade.classname"
-        :style="{
-          backgroundImage: trade.image,
-          backgroundColor: trade.background,
-          color: trade.foreground,
-        }"
-      >
-        <template v-if="trade.message">
-          <div class="trades__item__side icon-side"></div>
-          <div class="trades__item__message" v-html="trade.message"></div>
-          <div class="trades__item__date" :timestamp="trade.timestamp">
-            {{ trade.date }}
-          </div>
-        </template>
-        <template v-else>
-          <div class="trades__item__side icon-side"></div>
-          <div class="trades__item__exchange" :title="trade.exchange">
-            {{ trade.exchange }}
-          </div>
-          <div class="trades__item__price">
-            <span class="icon-currency"></span>
-            <span v-html="trade.price"></span>
-          </div>
-          <div class="trades__item__amount">
-            <span class="trades__item__amount__fiat"
-              ><span class="icon-currency"></span>
-              <span v-html="trade.amount"></span
-            ></span>
-            <span class="trades__item__amount__coin"
-              ><span class="icon-commodity"></span>
-              <span v-html="trade.size"></span
-            ></span>
-          </div>
-          <div class="trades__item__date" :timestamp="trade.timestamp">
-            {{ trade.date }}
-          </div>
-        </template>
-      </li>
-    </ul>
-    <div v-else class="trades__item trades__item--empty">
-      Nothing to show, yet.
-    </div>
+  <div id="trades" :class="{ '-logos': this.showLogos, '-slippage': this.showSlippage }">
+    <ul ref="tradesContainer"></ul>
+    <div v-if="!tradesCount" class="trade -empty">Nothing to show, yet.</div>
   </div>
 </template>
 
 <script>
 import { mapState } from 'vuex'
 
+import { ago, formatPrice, formatAmount } from '../utils/helpers'
+import { getColorByWeight, getColorLuminance, getAppBackgroundColor, splitRgba, getLogShade } from '../utils/colors'
+
 import socket from '../services/socket'
 import Sfx from '../services/sfx'
+
+let LAST_TRADE_TIMESTAMP // to control whether we show timestamp on trade or not
+let LAST_SIDE // to control wheter we show "up" or "down" icon in front of trade
+let MINIMUM_AMOUNT // alias threshold[0].amount
+let SIGNIFICANT_AMOUNT // alias threshold[1].amount
+let COLORS // prepared array of buy / sell colors ranges
+let GIFS // gifs from storages, by threshold gif keyword
+
+let activeExchanges = []
 
 export default {
   data() {
     return {
-      ticks: {},
-      trades: [],
-      gifs: {},
+      tradesCount: 0
     }
   },
   computed: {
-    ...mapState([
+    ...mapState('settings', [
       'pair',
       'maxRows',
       'thresholds',
       'exchanges',
       'useAudio',
-      'liquidationsOnlyList',
+      'showSlippage',
+      'liquidationsOnly',
       'audioIncludeInsignificants',
-      'preferBaseCurrencySize',
+      'preferQuoteCurrencySize',
       'decimalPrecision',
-      'showLogos',
+      'showLogos'
     ]),
+    ...mapState('app', ['actives'])
   },
   created() {
-    this.retrieveStoredGifs()
-    this.retrieveColorSteps()
+    // cache list of active exchange
+    activeExchanges = this.$store.state.app.actives.slice(0, this.$store.state.app.actives.length)
 
-    socket.$on('pairing', this.onPairing)
-    socket.$on('trades.instant', this.onTrades)
+    this.retrieveStoredGifs()
+    this.prepareColorsSteps()
+
+    socket.$on('trades.aggr', this.onTrades)
 
     this.onStoreMutation = this.$store.subscribe((mutation, state) => {
       switch (mutation.type) {
-        case 'toggleAudio':
+        case 'app/EXCHANGE_UPDATED':
+          activeExchanges = state.app.actives.slice(0, state.app.actives.length)
+          break
+        case 'settings/SET_PAIR':
+          this.clearList()
+          break
+        case 'settings/TOGGLE_AUDIO':
           if (mutation.payload) {
             this.sfx = new Sfx()
           } else {
             this.sfx && this.sfx.disconnect() && delete this.sfx
           }
           break
-        case 'setThresholdGif':
-          this.fetchGifByKeyword(
-            mutation.payload.value,
-            mutation.payload.isDeleted
-          )
+        case 'settings/SET_THRESHOLD_GIF':
+          this.fetchGifByKeyword(mutation.payload.value, mutation.payload.isDeleted)
           break
-        case 'setThresholdColor':
-        case 'setThresholdAmount':
-          this.retrieveColorSteps()
-          this.trades.splice(0, this.trades.length)
-
-          this.redrawList()
+        case 'settings/SET_THRESHOLD_COLOR':
+        case 'settings/SET_THRESHOLD_AMOUNT':
+        case 'settings/DELETE_THRESHOLD':
+        case 'settings/ADD_THRESHOLD':
+          this.prepareColorsSteps()
           break
       }
     })
@@ -131,231 +102,246 @@ export default {
       }
     }
 
-    this.timeAgoInterval = setInterval(() => {
-      for (let element of this.$el.querySelectorAll('[timestamp]')) {
-        element.innerHTML = this.$root.ago(element.getAttribute('timestamp'))
+    this._timeAgoInterval = setInterval(() => {
+      const elements = this.$el.getElementsByClassName('-timestamp')
+
+      if (!elements.length) {
+        return
+      }
+
+      let ref
+
+      for (let i = 0; i < elements.length; i++) {
+        const txt = ago(elements[i].getAttribute('timestamp'))
+
+        if (typeof ref !== 'undefined' && ref === txt) {
+          elements[i].textContent = ''
+          elements[i].className = 'trade__date'
+          i++
+          continue
+        }
+
+        if (txt !== elements[i].textContent) {
+          elements[i].textContent = txt
+        }
+
+        ref = txt
       }
     }, 1000)
-
-    this.redrawList()
   },
   beforeDestroy() {
-    socket.$off('pairing', this.onPairing)
-    socket.$off('trades.instant', this.onTrades)
+    socket.$off('trades.aggr', this.onTrades)
 
     this.onStoreMutation()
 
-    clearInterval(this.timeAgoInterval)
+    clearInterval(this._timeAgoInterval)
 
     this.sfx && this.sfx.disconnect()
   },
   methods: {
-    onPairing() {
-      this.trades = []
-    },
-    onTrades(trades, silent = false) {
-      for (let trade of trades) {
-        this.processTrade(
-          trade,
-          Math.min(2000, trades[trades.length - 1][1] - trades[0][1]),
-          silent
-        )
-      }
-    },
-    processTrade(trade, silent = false) {
-      const size = this.preferBaseCurrencySize ? trade[3] : trade[2] * trade[3]
-
-      const multiplier =
-        typeof this.exchanges[trade[0]].threshold !== 'undefined'
-          ? +this.exchanges[trade[0]].threshold
-          : 1
-
-      if (trade[5] === 1) {
-        if (!silent && this.sfx) {
-          this.sfx.liquidation()
+    onTrades(trades) {
+      for (let i = 0; i < trades.length; i++) {
+        if (activeExchanges.indexOf(trades[i].exchange) === -1) {
+          continue
         }
 
-        if (size >= this.thresholds[0].amount * multiplier) {
-          let liquidationMessage
+        const trade = trades[i]
+        const amount = trade.size * (this.preferQuoteCurrencySize ? trade.price : 1)
+        const multiplier = typeof this.exchanges[trade.exchange].threshold !== 'undefined' ? +this.exchanges[trade.exchange].threshold : 1
 
-          if (this.preferBaseCurrencySize) {
-            liquidationMessage = `<i class="icon-commodity"></i> <strong>${this.$root.formatAmount(
-              size,
-              1
-            )}</strong>`
-          } else {
-            liquidationMessage = `<i class="icon-currency"></i> <strong>${this.$root.formatAmount(
-              size,
-              1
-            )}</strong>`
+        if (trade.liquidation) {
+          if (this.useAudio && amount > SIGNIFICANT_AMOUNT * multiplier * 0.1) {
+            this.sfx.liquidation((amount / SIGNIFICANT_AMOUNT) * multiplier)
           }
 
-          liquidationMessage += `&nbsp;liquidated <strong>${
-            trade[4] > 0 ? 'SHORT' : 'LONG'
-          }</strong> @ <i class="icon-currency"></i> ${this.$root.formatPrice(
-            trade[2]
-          )}`
+          if (amount >= MINIMUM_AMOUNT * multiplier) {
+            let liquidationMessage = `<i class="icon-currency"></i> <strong>${formatAmount(amount, 1)}</strong>`
 
-          this.appendRow(trade, ['liquidation'], liquidationMessage)
+            liquidationMessage += `&nbsp;liq<span class="min-280">uidate</span>d <strong>${
+              trade.side === 'buy' ? 'SHORT' : 'LONG'
+            }</strong> @ <i class="icon-quote"></i> ${formatPrice(trade.price)}`
+
+            this.appendRow(trade, amount, multiplier, '-liquidation', liquidationMessage)
+          }
+          continue
+        } else if (this.liquidationsOnly) {
+          continue
         }
-        return
-      } else if (this.liquidationsOnlyList) {
-        return
-      }
 
-      if (
-        !silent &&
-        this.useAudio &&
-        ((this.audioIncludeInsignificants &&
-          size > this.thresholds[1].amount * Math.max(0.1, multiplier) * 0.1) ||
-          size > this.thresholds[1].amount * Math.max(0.1, multiplier))
-      ) {
-        this.sfx &&
-          this.sfx.tradeToSong(
-            size / (this.thresholds[1].amount * Math.max(0.1, multiplier)),
-            trade[4]
-          )
-      }
-
-      // group by [exchange name + buy=1/sell=0] (ex bitmex1)
-      const tid = trade[0] + trade[4]
-      const now = socket.getCurrentTimestamp()
-
-      if (this.thresholds[0].amount) {
-        if (this.ticks[tid]) {
-          if (now - this.ticks[tid][2] > 5000) {
-            delete this.ticks[tid]
-          } else {
-            // average group prices
-            this.ticks[tid][2] =
-              (this.ticks[tid][2] * this.ticks[tid][3] + trade[2] * trade[3]) /
-              2 /
-              ((this.ticks[tid][3] + trade[3]) / 2)
-
-            // sum volume
-            this.ticks[tid][3] += trade[3]
-
-            if (
-              this.ticks[tid][2] * this.ticks[tid][3] >=
-              this.thresholds[0].amount * multiplier
-            ) {
-              this.appendRow(this.ticks[tid])
-              delete this.ticks[tid]
-            }
-
-            return
+        if (amount >= MINIMUM_AMOUNT * multiplier) {
+          this.appendRow(trade, amount, multiplier)
+        } else {
+          if (this.useAudio && this.audioIncludeInsignificants && amount >= SIGNIFICANT_AMOUNT * 0.1) {
+            this.sfx.tradeToSong(amount / (SIGNIFICANT_AMOUNT * multiplier), trade.side, 0)
           }
         }
-
-        if (!this.ticks[tid] && size < this.thresholds[0].amount * multiplier) {
-          this.ticks[tid] = trade
-          return
-        }
       }
-
-      this.appendRow(trade)
-      // }, delay)
     },
-    appendRow(trade, classname = [], message = null) {
-      let icon
-      let image
-      let amount = this.preferBaseCurrencySize ? trade[3] : trade[2] * trade[3]
-
-      classname.push(trade[0])
-
-      const multiplier =
-        this.exchanges[trade[0]] &&
-        typeof this.exchanges[trade[0]].threshold !== 'undefined'
-          ? +this.exchanges[trade[0]].threshold
-          : 1
-
-      let color = this.getTradeColor(trade, multiplier)
-
-      if (trade[4]) {
-        classname.push('buy')
-      } else {
-        classname.push('sell')
+    appendRow(trade, amount, multiplier = 1, classname = '', message = null) {
+      if (!this.tradesCount) {
+        this.$forceUpdate()
       }
 
-      if (amount >= this.thresholds[1].amount * multiplier) {
-        classname.push('significant')
+      this.tradesCount++
+
+      const li = document.createElement('li')
+      li.className = ('trade ' + classname).trim()
+      li.className += ' -' + trade.exchange
+
+      li.className += ' -' + trade.side
+
+      if (trade.exchange.length > 10) {
+        li.className += ' -sm'
+      }
+
+      if (amount >= SIGNIFICANT_AMOUNT * multiplier) {
+        li.className += ' -significant'
       }
 
       for (let i = 0; i < this.thresholds.length; i++) {
-        if (amount < this.thresholds[i].amount * multiplier) {
+        li.className += ' -level-' + i
+
+        if (!this.thresholds[i + 1] || amount < this.thresholds[i + 1].amount * multiplier) {
+          // THIS IS OUR THRESHOLD
+          const color = COLORS[Math.min(this.thresholds.length - 2, i)]
+          const threshold = this.thresholds[i]
+
+          if (threshold.gif && GIFS[threshold.gif]) {
+            // get random gif for this threshold
+            li.style.backgroundImage = `url('${GIFS[threshold.gif][Math.floor(Math.random() * (GIFS[threshold.gif].length - 1))]}`
+          }
+
+          // percentage to next threshold
+          const percentToNextThreshold = (Math.max(amount, color.threshold) - color.threshold) / color.range
+
+          // 0-255 luminance of nearest color
+          const luminance = color[trade.side][(percentToNextThreshold < 0.5 ? 'from' : 'to') + 'Luminance']
+
+          // background color simple color to color based on percentage of amount to next threshold
+          const backgroundColor = getColorByWeight(color[trade.side].from, color[trade.side].to, percentToNextThreshold)
+          li.style.backgroundColor = 'rgb(' + backgroundColor[0] + ', ' + backgroundColor[1] + ', ' + backgroundColor[2] + ')'
+
+          if (i >= 1) {
+            // ajusted amount > SIGNIFICANT_AMOUNT
+            // only pure black or pure white foreground
+            li.style.color = luminance < 175 ? 'white' : 'black'
+          } else {
+            // take background color and apply logarithmic shade based on amount to SIGNIFICANT_AMOUNT percentage
+            // darken if luminance of background is high, lighten otherwise
+            li.style.color = getLogShade(backgroundColor, Math.max(0.25, Math.min(1, amount / SIGNIFICANT_AMOUNT)) * (luminance < 175 ? 1 : -1))
+          }
+
+          if (this.useAudio && amount >= (this.audioIncludeInsignificants ? SIGNIFICANT_AMOUNT * 0.1 : MINIMUM_AMOUNT * 1) * multiplier) {
+            this.sfx.tradeToSong(amount / (SIGNIFICANT_AMOUNT * multiplier), trade.side, i)
+          }
+
           break
         }
+      }
 
-        if (this.thresholds[i].gif && this.gifs[this.thresholds[i].gif]) {
-          image = this.gifs[this.thresholds[i].gif][
-            Math.floor(
-              Math.random() * (this.gifs[this.thresholds[i].gif].length - 1)
-            )
-          ]
+      if (!message) {
+        if (trade.side !== LAST_SIDE) {
+          const side = document.createElement('div')
+          side.className = 'trade__side icon-side'
+          li.appendChild(side)
         }
 
-        classname.push('level-' + i)
+        LAST_SIDE = trade.side
       }
 
-      amount = this.$root.formatAmount(trade[2] * trade[3])
+      const exchange = document.createElement('div')
+      exchange.className = 'trade__exchange'
+      exchange.innerText = trade.exchange.replace('_', ' ')
+      exchange.setAttribute('title', trade.exchange)
+      li.appendChild(exchange)
 
-      if (image) {
-        image = 'url(' + image + ')'
+      if (message) {
+        const message_div = document.createElement('div')
+        message_div.className = 'trade__message'
+        message_div.innerHTML = message
+        li.appendChild(message_div)
+      } else {
+        const price = document.createElement('div')
+        price.className = 'trade__price'
+        price.innerHTML = `<span class="icon-quote"></span> <span>${formatPrice(trade.price)}</span>`
+        li.appendChild(price)
+
+        if (this.showSlippage === 'price' && trade.slippage / trade.price > 0.0001) {
+          price.setAttribute(
+            'slippage',
+            (trade.slippage > 0 ? '+' : '-') + document.getElementById('app').getAttribute('data-symbol') + Math.abs(trade.slippage).toFixed(1)
+          )
+        } else if (this.showSlippage === 'bps' && trade.slippage) {
+          price.setAttribute('slippage', (trade.slippage > 0 ? '+' : '-') + trade.slippage)
+        }
+
+        const amount_div = document.createElement('div')
+        amount_div.className = 'trade__amount'
+
+        const amount_quote = document.createElement('span')
+        amount_quote.className = 'trade__amount__quote'
+        amount_quote.innerHTML = `<span class="icon-quote"></span> <span>${formatAmount(trade.price * trade.size)}</span>`
+
+        const amount_base = document.createElement('span')
+        amount_base.className = 'trade__amount__base'
+        amount_base.innerHTML = `<span class="icon-base"></span> <span>${formatAmount(trade.size)}</span>`
+
+        amount_div.appendChild(amount_quote)
+        amount_div.appendChild(amount_base)
+        li.appendChild(amount_div)
       }
 
-      this.trades.unshift({
-        id: Math.random()
-          .toString(36)
-          .substring(7),
-        background: color.background,
-        foreground: color.foreground,
-        side: trade[4] > 0 ? 'BUY' : 'SELL',
-        size: this.$root.formatAmount(trade[3]),
-        exchange: trade[0],
-        price: this.$root.formatPrice(trade[2]),
-        amount: amount,
-        classname: classname.map((a) => 'trades__item--' + a).join(' '),
-        icon: icon,
-        date: this.$root.ago(trade[1]),
-        timestamp: trade[1],
-        image: image,
-        message: message,
-      })
+      const date = document.createElement('div')
+      date.className = 'trade__date'
 
-      this.trades.splice(+this.maxRows || 20, this.trades.length)
+      let timestamp = Math.floor(trade.timestamp / 1000) * 1000
+
+      if (timestamp !== LAST_TRADE_TIMESTAMP) {
+        LAST_TRADE_TIMESTAMP = timestamp
+
+        date.setAttribute('timestamp', trade.timestamp)
+        date.innerText = ago(timestamp)
+
+        date.className += ' -timestamp'
+      }
+
+      li.appendChild(date)
+
+      this.$refs.tradesContainer.appendChild(li)
+
+      while (this.tradesCount > this.maxRows) {
+        this.tradesCount--
+        this.$refs.tradesContainer.removeChild(this.$refs.tradesContainer.firstChild)
+      }
     },
     retrieveStoredGifs(refresh) {
-      this.thresholds.forEach((threshold) => {
+      GIFS = {}
+
+      this.thresholds.forEach(threshold => {
         if (!threshold.gif) {
           return
         }
 
         const slug = this.slug(threshold.gif)
-        const storage = localStorage
-          ? JSON.parse(localStorage.getItem('threshold_' + slug + '_gifs'))
-          : null
+        const storage = localStorage ? JSON.parse(localStorage.getItem('threshold_' + slug + '_gifs')) : null
 
-        if (
-          !refresh &&
-          storage &&
-          +new Date() - storage.timestamp < 1000 * 60 * 60 * 24 * 7
-        ) {
-          this.gifs[threshold.gif] = storage.data
+        if (!refresh && storage && +new Date() - storage.timestamp < 1000 * 60 * 60 * 24 * 7) {
+          GIFS[threshold.gif] = storage.data
         } else {
           this.fetchGifByKeyword(threshold.gif)
         }
       })
     },
     fetchGifByKeyword(keyword, isDeleted = false) {
-      if (!keyword) {
+      if (!keyword || !GIFS) {
         return
       }
 
       const slug = this.slug(keyword)
 
       if (isDeleted) {
-        if (this.gifs[keyword]) {
-          delete this.gifs[keyword]
+        if (GIFS[keyword]) {
+          delete GIFS[keyword]
         }
 
         localStorage.removeItem('threshold_' + slug + '_gifs')
@@ -363,28 +349,24 @@ export default {
         return
       }
 
-      fetch(
-        'https://api.giphy.com/v1/gifs/search?q=' +
-          keyword +
-          '&rating=r&limit=100&api_key=b5Y5CZcpj9spa0xEfskQxGGnhChYt3hi'
-      )
-        .then((res) => res.json())
-        .then((res) => {
+      fetch('https://api.giphy.com/v1/gifs/search?q=' + keyword + '&rating=r&limit=100&api_key=b5Y5CZcpj9spa0xEfskQxGGnhChYt3hi')
+        .then(res => res.json())
+        .then(res => {
           if (!res.data || !res.data.length) {
             return
           }
 
-          this.gifs[keyword] = []
+          GIFS[keyword] = []
 
           for (let item of res.data) {
-            this.gifs[keyword].push(item.images.original.url)
+            GIFS[keyword].push(item.images.original.url)
           }
 
           localStorage.setItem(
             'threshold_' + slug + '_gifs',
             JSON.stringify({
               timestamp: +new Date(),
-              data: this.gifs[keyword],
+              data: GIFS[keyword]
             })
           )
         })
@@ -395,141 +377,47 @@ export default {
         .trim()
         .replace(/[^a-zA-Z0-9]+/g, '-')
     },
-    formatRgba(string) {
-      const match = string.match(
-        /rgba?\((\d+)[\s\,]*(\d+)[\s\,]*(\d+)(?:[\s\,]*([\d\.]+))?\)/
-      )
+    prepareColorsSteps() {
+      const appBackgroundColor = getAppBackgroundColor()
 
-      return {
-        r: +match[1],
-        g: +match[2],
-        b: +match[3],
-        a: typeof match[4] === 'undefined' ? 1 : +match[4],
+      COLORS = []
+      MINIMUM_AMOUNT = this.thresholds[0].amount
+      SIGNIFICANT_AMOUNT = this.thresholds[1].amount
+
+      for (let i = 0; i < this.thresholds.length - 1; i++) {
+        const buyFrom = splitRgba(this.thresholds[i].buyColor, appBackgroundColor)
+        const buyTo = splitRgba(this.thresholds[i + 1].buyColor, appBackgroundColor)
+        const sellFrom = splitRgba(this.thresholds[i].sellColor, appBackgroundColor)
+        const sellTo = splitRgba(this.thresholds[i + 1].sellColor, appBackgroundColor)
+
+        COLORS.push({
+          threshold: this.thresholds[i].amount,
+          range: this.thresholds[i + 1].amount - this.thresholds[i].amount,
+          buy: {
+            from: buyFrom,
+            to: buyTo,
+            fromLuminance: getColorLuminance(buyFrom),
+            toLuminance: getColorLuminance(buyTo)
+          },
+          sell: {
+            from: sellFrom,
+            to: sellTo,
+            fromLuminance: getColorLuminance(sellFrom),
+            toLuminance: getColorLuminance(sellTo)
+          }
+        })
       }
     },
-    retrieveColorSteps() {
-      let uniqueThresholds = []
-      let amounts = []
 
-      for (let i = this.thresholds.length - 1; i >= 0; i--) {
-        if (amounts.indexOf(+this.thresholds[i].amount) === -1) {
-          uniqueThresholds.unshift(this.thresholds[i])
-          amounts.push(+this.thresholds[i].amount)
-        }
-      }
-
-      const maximum = uniqueThresholds[uniqueThresholds.length - 1].amount
-
-      this.colors = {}
-
-      this.colors.buys = uniqueThresholds.map((threshold, index) => ({
-        pct: threshold.amount / maximum,
-        color: this.formatRgba(threshold.buyColor),
-      }))
-
-      this.colors.sells = uniqueThresholds.map((threshold, index) => ({
-        pct: threshold.amount / maximum,
-        color: this.formatRgba(threshold.sellColor),
-      }))
-    },
-    shadeRGBColor(color, percent) {
-      var f = color.split(','),
-        t = percent < 0 ? 0 : 255,
-        p = percent < 0 ? percent * -1 : percent,
-        R = parseInt(f[0].slice(4)),
-        G = parseInt(f[1]),
-        B = parseInt(f[2])
-      return (
-        'rgb(' +
-        (Math.round((t - R) * p) + R) +
-        ',' +
-        (Math.round((t - G) * p) + G) +
-        ',' +
-        (Math.round((t - B) * p) + B) +
-        ')'
-      )
-    },
-    getTradeColor(trade, multiplier = 1) {
-      const amount = this.preferBaseCurrencySize
-        ? trade[3]
-        : trade[2] * trade[3]
-      const pct =
-        amount /
-        (this.thresholds[this.thresholds.length - 1].amount * multiplier)
-      const palette = this.colors[trade[4] > 0 ? 'buys' : 'sells']
-
-      for (var i = 1; i < palette.length - 1; i++) {
-        if (pct < palette[i].pct) {
-          break
-        }
-      }
-
-      const lower = palette[i - 1]
-      const upper = palette[i]
-      const range = upper.pct - lower.pct
-      let rangePct = (pct - lower.pct) / range
-      let pctLower = 1 - rangePct
-      const pctUpper = rangePct
-
-      const backgroundRGB = {
-        r: Math.floor(lower.color.r * pctLower + upper.color.r * rangePct),
-        g: Math.floor(lower.color.g * pctLower + upper.color.g * rangePct),
-        b: Math.floor(lower.color.b * pctLower + upper.color.b * rangePct),
-        a: lower.color.a * pctLower + upper.color.a * rangePct,
-      }
-
-      const background = `rgba(${backgroundRGB.r}, ${backgroundRGB.g}, ${
-        backgroundRGB.b
-      }, ${backgroundRGB.a})`
-      const luminance = Math.sqrt(
-        0.299 * Math.pow(backgroundRGB.r, 2) +
-          0.587 * Math.pow(backgroundRGB.g, 2) +
-          0.114 * Math.pow(backgroundRGB.b, 2)
-      )
-      const ajustedLuminance = luminance * backgroundRGB.a
-
-      let foreground
-
-      if (backgroundRGB.a === 1 && luminance < 200) {
-        foreground = 'white'
-      } else if (luminance > 200) {
-        foreground = 'black'
-      } else if (luminance < 10) {
-        foreground = 'white'
-      } else {
-        rangePct *= 3 * ((200 - ajustedLuminance) / 200)
-
-        foreground = this.shadeRGBColor(
-          `rgb(${backgroundRGB.r}, ${backgroundRGB.g}, ${backgroundRGB.b})`,
-          Math.max(0.25, rangePct)
-        )
-      }
-
-      return {
-        background,
-        foreground,
-      }
-    },
-    redrawList(limit = 1000) {
-      clearTimeout(this._refreshColorRenderList)
-
-      this._refreshColorRenderList = setTimeout(() => {
-        this.onTrades(
-          socket.trades.slice(
-            socket.trades.length - limit,
-            socket.trades.length
-          ),
-          true
-        )
-      }, 500)
-    },
-  },
+    clearList() {
+      this.$refs.tradesContainer.innerHTML = ''
+      this.tradesCount = 0
+    }
+  }
 }
 </script>
 
 <style lang="scss">
-@import '../assets/sass/variables';
-
 @keyframes highlight {
   0% {
     opacity: 0.75;
@@ -540,32 +428,62 @@ export default {
   }
 }
 
-.trades {
+#trades {
   background-color: rgba(black, 0.2);
+  line-height: 1;
 
   ul {
     margin: 0;
     padding: 0;
     display: flex;
-    flex-flow: column nowrap;
+    flex-flow: column-reverse nowrap;
+  }
+
+  &.-slippage {
+    .trade__price {
+      flex-grow: 1.5;
+    }
   }
 
   &.-logos {
-    .trades__item__exchange {
+    .trade__exchange {
       text-indent: -9999px;
-      flex-basis: 3em;
-      flex-grow: 0;
+      flex-basis: 0;
+      flex-grow: 0.4;
     }
 
     @each $exchange in $exchanges {
-      .trades__item--#{$exchange} .trades__item__exchange {
-        background-image: url('/static/exchanges/#{$exchange}.svg');
+      .-#{$exchange} .trade__exchange {
+        background-image: url('../assets/exchanges/#{$exchange}.svg');
       }
+    }
+
+    .-liquidation {
+      .trade__exchange {
+        position: absolute;
+        width: 1em;
+      }
+    }
+  }
+
+  &:not(.-logos) .trade.-sm {
+    .trade__exchange {
+      font-size: 0.75em;
+      letter-spacing: -0.5px;
+      margin-top: -5px;
+      margin-bottom: -5px;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 0.9;
+    }
+
+    &.-liquidation .trade__exchange {
+      max-width: 4em;
     }
   }
 }
 
-.trades__item {
+.trade {
   display: flex;
   flex-flow: row nowrap;
   padding: 0.4em 0.6em;
@@ -584,21 +502,21 @@ export default {
     bottom: 0;
     opacity: 0;
     background-color: white;
-    animation: 5s $easeOutExpo highlight;
+    animation: 1s $easeOutExpo highlight;
     pointer-events: none;
   }
 
-  &.trades__item--empty {
+  &.-empty {
     justify-content: center;
     padding: 20px;
-    font-size: 80%;
+    font-size: 0.8rem;
 
     &:after {
       display: none;
     }
   }
 
-  &.trades__item--sell {
+  &.-sell {
     background-blend-mode: soft-light;
     background-color: lighten($red, 35%);
     color: $red;
@@ -608,7 +526,7 @@ export default {
     }
   }
 
-  &.trades__item--buy {
+  &.-buy {
     background-color: lighten($green, 50%);
     color: $green;
 
@@ -617,34 +535,15 @@ export default {
     }
   }
 
-  &.trades__item--level-1 {
+  &.-level-1 {
     color: white;
   }
 
-  &.trades__item--liquidation {
-    background-color: $pink !important;
-    color: white !important;
-  }
-
-  &.trades__item--level-2 {
+  &.-level-2 {
     padding: 0.5em 0.6em;
-
-    > div {
-      position: relative;
-    }
-
-    &:before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      right: 0;
-      background-color: rgba(black, 0.2);
-    }
   }
 
-  &.trades__item--level-3 {
+  &.-level-3 {
     box-shadow: 0 0 20px rgba(red, 0.5);
     z-index: 1;
   }
@@ -656,93 +555,129 @@ export default {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
 
-    &.trades__item__side {
+  .trade__side {
+    flex-grow: 0;
+    flex-basis: 1em;
+    font-size: 1em;
+    position: absolute;
+
+    + .trade__message {
+      margin-left: 0.5em;
+    }
+  }
+
+  .icon-currency,
+  .icon-quote,
+  .icon-base {
+    line-height: 0;
+  }
+
+  .trade__exchange {
+    background-repeat: no-repeat;
+    background-position: center center;
+    flex-grow: 0.75;
+    margin-left: 5%;
+
+    small {
+      opacity: 0.8;
+    }
+  }
+
+  &.-liquidation {
+    background-color: $pink !important;
+    color: white !important;
+
+    .trade__exchange {
       flex-grow: 0;
-      flex-basis: 1em;
-      font-size: 1em;
-      line-height: 1.06;
+      flex-basis: auto;
+      margin-left: 0;
+    }
+  }
 
-      + .trades__item__message {
-        margin-left: 0.5em;
+  .trade__price:after {
+    content: attr(slippage);
+    font-size: 80%;
+    position: relative;
+    top: -2px;
+    left: 2px;
+    opacity: 0.75;
+  }
+
+  .trade__amount {
+    flex-grow: 1;
+    position: relative;
+
+    > span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.1s ease-in-out;
+      display: block;
+
+      &.trade__amount__quote {
+        position: absolute;
+      }
+
+      &.trade__amount__base {
+        transform: translateX(25%);
+        opacity: 0;
       }
     }
 
-    &.trades__item__exchange {
-      background-repeat: no-repeat;
-      background-position: center center;
-      flex-grow: 0.75;
-
-      small {
-        opacity: 0.8;
-      }
-    }
-
-    &.trades__item__amount {
-      position: relative;
-
-      > span {
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        transition: all 0.1s ease-in-out;
-        display: block;
-
-        &.trades__item__amount__fiat {
-          position: absolute;
-        }
-
-        &.trades__item__amount__coin {
-          transform: translateX(25%);
-          opacity: 0;
-        }
+    &:hover {
+      > span.trade__amount__base {
+        transform: none;
+        opacity: 1;
       }
 
-      &:hover {
-        > span.trades__item__amount__coin {
-          transform: none;
-          opacity: 1;
-        }
-
-        > span.trades__item__amount__fiat {
-          transform: translateX(-25%);
-          opacity: 0;
-        }
+      > span.trade__amount__quote {
+        transform: translateX(-25%);
+        opacity: 0;
       }
     }
+  }
 
-    &.trades__item__date {
-      text-align: right;
-      flex-basis: 2.5em;
-      flex-grow: 0;
-    }
+  .trade__date {
+    text-align: right;
+    flex-basis: 2em;
+    flex-grow: 0;
+  }
 
-    &.trades__item__message {
-      flex-grow: 2;
-      text-align: center;
-      font-size: 90%;
+  .trade__message {
+    flex-grow: 2;
+    text-align: center;
+    font-size: 90%;
+    line-height: 1.5;
+
+    + .trade__date {
+      overflow: visible;
+      flex-basis: auto;
+      font-size: 0.8em;
+      margin-left: -0.2em;
     }
   }
 }
 
-#app[data-currency='bitcoin'] .trades__item .trades__item__amount {
-  .trades__item__amount__fiat {
+#app[data-prefer='base'] .trade .trade__amount {
+  .trade__amount__quote {
     transform: translateX(-25%);
     opacity: 0;
   }
 
-  .trades__item__amount__coin {
+  .trade__amount__base {
     transform: none;
     opacity: 1;
   }
 
   &:hover {
-    > span.trades__item__amount__coin {
+    > span.trade__amount__base {
       transform: translateX(25%);
       opacity: 0;
     }
 
-    > span.trades__item__amount__fiat {
+    > span.trade__amount__quote {
       transform: none;
       opacity: 1;
     }

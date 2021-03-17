@@ -1,578 +1,313 @@
 <template>
-  <div id="counters" class="counters">
-    <ul ref="countersList">
-      <li
-        v-for="(sum, index) of stackedSums"
-        :key="`sum-${index}`"
-        v-if="!hideIncompleteCounter || index <= completed"
-        class="counters__item"
-      >
-        <div
-          class="counter__index"
-          v-tippy="{ placement: 'left' }"
-          title="Edit interval"
-        >
-          <editable
-            :content="labels[index]"
-            @output="updateCounterStep(index, $event)"
-          ></editable>
-        </div>
-        <div
-          class="counter__up"
-          :style="{ flexBasis: (sum[0] / (sum[0] + sum[1])) * 100 + '%' }"
-          :data-amount="$root.formatAmount(sum[0], 2)"
-        >
-          <div v-if="index === 0" class="counter__light"></div>
-        </div>
-        <div
-          class="counter__down"
-          :style="{ flexBasis: (sum[1] / (sum[0] + sum[1])) * 100 + '%' }"
-          :data-amount="$root.formatAmount(sum[1], 2)"
-        >
-          <div v-if="index === 0" class="counter__light"></div>
-        </div>
-        <div
-          class="counter__delete icon-cross"
-          @click="deleteCounter(index)"
-        ></div>
-      </li>
-    </ul>
-    <!-- <div class="counters__add"><i class="icon-add"></i> Add step</div> -->
-  </div>
+  <ul class="counters">
+    <li v-for="(step, index) in activeSteps" :key="index" v-bind:duration="step.duration" class="counter">
+      <div class="counter__side -buy" v-bind:style="{ width: (step.buy / (step.buy + step.sell)) * 100 + '%' }">
+        <span v-if="!countersCount">{{ $root.formatAmount(step.buy) }}</span>
+        <span v-else>{{ step.buy }}</span>
+      </div>
+      <div class="counter__side -sell" v-bind:style="{ width: (step.sell / (step.buy + step.sell)) * 100 + '%' }">
+        <span v-if="!countersCount">{{ $root.formatAmount(step.sell) }}</span>
+        <span v-else>{{ step.sell }}</span>
+      </div>
+    </li>
+  </ul>
 </template>
 
 <script>
 import { mapState } from 'vuex'
 
+import { getHms } from '../utils/helpers'
+
 import socket from '../services/socket'
+
+const CHUNK = {
+  timestamp: null,
+  buy: 0,
+  sell: 0
+}
+
+const COUNTERS = []
 
 export default {
   data() {
     return {
-      labels: [],
-      strictSums: [],
-      stackedSums: [],
-      counters: [],
-      complete: 0,
-      queue: [0, 0],
-      strength: [0, 0],
+      topElement: {},
+      steps: []
     }
   },
   computed: {
-    ...mapState([
-      'pair',
-      'actives',
-      'thresholds',
-      'countersSteps',
-      'counterPrecision',
-      'cumulativeCounters',
-      'hideIncompleteCounter',
-    ]),
+    ...mapState('app', ['actives']),
+    ...mapState('settings', ['preferQuoteCurrencySize', 'thresholds', 'liquidationsOnly', 'countersSteps', 'countersCount', 'countersGranularity']),
+    activeSteps: function() {
+      return this.steps.filter(a => a.hasData)
+    }
   },
   created() {
-    const now = +new Date()
+    socket.$on('sums', this.onSums)
 
-    window.cntr = this
-
-    if (this.counters.length < this.countersSteps.length) {
-      for (let i = this.counters.length; i < this.countersSteps.length; i++) {
-        this.labels.push(this.$root.ago(now - this.countersSteps[i]))
-        this.counters.push([])
-        this.strictSums.push([0, 0])
-        this.stackedSums.push([0, 0])
-      }
-    }
-
-    this.onStoreMutation = this.$store.subscribe((mutation, state) => {
+    this.onStoreMutation = this.$store.subscribe(mutation => {
       switch (mutation.type) {
-        case 'setTimeframe':
-        case 'setCounterStep':
-        case 'toggleCumulativeCounters':
-        case 'replaceCounterSteps':
-        case 'reloadExchangeState':
-          this.rebuildCounters()
+        case 'settings/SET_PAIR':
+          this.createCounters()
+          break
+        case 'settings/REPLACE_COUNTERS':
+        case 'settings/TOGGLE_LIQUIDATIONS_ONLY':
+        case 'settings/TOGGLE_COUNTERS_COUNT':
+          this.createCounters()
           break
       }
     })
 
-    socket.$on('trades.queued', this.appendTrades)
-    socket.$on('trades.instant', this.highlightSide)
-    socket.$on('historical', this.onFetch)
+    this.createCounters()
 
-    this.rebuildCounters()
+    this._populateCountersInterval = setInterval(this.populateCounters.bind(this), this.countersGranularity)
   },
+  mounted() {},
   beforeDestroy() {
-    socket.$off('trades.queued', this.appendTrades)
-    socket.$off('trades.instant', this.highlightSide)
-    socket.$off('historical', this.onFetch)
-
-    clearInterval(this.countersRefreshCycleInterval)
+    socket.$off('sums', this.onSums)
 
     this.onStoreMutation()
+
+    clearInterval(this._populateCountersInterval)
   },
   methods: {
-    highlightSide(trades) {
-      const volume = [0, 0]
-
-      for (let i = 0; i < trades.length; i++) {
-        volume[+trades[i][4]] += trades[i][3] * trades[i][2]
+    onSums(sums) {
+      const volume = {
+        buy: sums.vbuy,
+        sell: sums.vsell
       }
 
-      const side = volume[1] > volume[0] ? 1 : 0
+      if (this.liquidationsOnly) {
+        volume.buy = sums.lbuy
+        volume.sell = sums.lsell
+      } else if (this.countersCount) {
+        volume.buy = sums.cbuy
+        volume.sell = sums.csell
+      }
 
-      const strength =
-        (this.strength[side] + volume[side]) / (this.thresholds[0].amount * 0.1)
+      if (volume.buy || volume.sell) {
+        if (!CHUNK.timestamp) {
+          CHUNK.timestamp = sums.timestamp
+        }
 
-      const element = this.$refs.countersList.children[0].querySelector(
-        '.counter__' + (side ? 'up' : 'down')
-      ).children[0]
+        CHUNK.buy += volume.buy
+        CHUNK.sell += volume.sell
 
-      element.style.background = `linear-gradient(to ${
-        side ? 'right' : 'left'
-      }, rgba(255, 255, 255, 0), rgba(255, 255, 255, ${(strength * 0.8).toFixed(
-        2
-      )}))`
-
-      element.classList.remove('-highlight')
-      void element.offsetWidth
-      element.classList.add('-highlight')
-
-      this.strength[side] = (this.strength[side] + volume[side]) * 0.75
-    },
-    appendTrades(trades, upVolume, downVolume) {
-      const now = +new Date()
-
-      this.queue[0] += upVolume
-      this.queue[1] += downVolume
-
-      for (let index = 0; index < this.stackedSums.length; index++) {
-        this.$set(
-          this.stackedSums[index],
-          0,
-          this.stackedSums[index][0] + upVolume
-        )
-        this.$set(
-          this.stackedSums[index],
-          1,
-          this.stackedSums[index][1] + downVolume
-        )
-
-        if (!this.cumulativeCounters) {
-          break
+        for (let i = 0; i < this.steps.length; i++) {
+          this.steps[i].buy += volume.buy
+          this.steps[i].sell += volume.sell
         }
       }
     },
-    onFetch(ticks) {
-      const trades = this.getTicksTrades()
-      const stacks = this.stackTrades(trades)
+    clearCounters() {
+      COUNTERS.splice(0, COUNTERS.length)
+      CHUNK.timestamp = null
+      CHUNK.buy = CHUNK.sell = 0
 
-      this.populateCounters(stacks)
+      this.steps.splice(0, this.steps.length)
     },
-    updateCounters() {
-      if (!this.counters.length) {
-        return
-      }
-
-      const now = +new Date()
-
-      if (this.queue[0] || this.queue[1]) {
-        this.counters[0].push([now, this.queue[0], this.queue[1]])
-        this.strictSums[0][0] += this.queue[0]
-        this.strictSums[0][1] += this.queue[1]
-
-        this.queue[0] = this.queue[1] = 0
-      }
-
-      let stepIndex = 0
-      let stackedUpVolume = 0
-      let stackedDownVolume = 0
+    createCounters() {
+      this.clearCounters()
 
       for (let step of this.countersSteps) {
-        let upVolume = 0
-        let downVolume = 0
-
-        let i
-
-        for (i = 0; i < this.counters[stepIndex].length; i++) {
-          if (this.counters[stepIndex][i][0] - 10 > now - step) {
-            break
-          }
-
-          upVolume += this.counters[stepIndex][i][1]
-          downVolume += this.counters[stepIndex][i][2]
-        }
-
-        if (i > 0) {
-          const expired = this.counters[stepIndex].splice(0, i)
-
-          this.strictSums[stepIndex][0] -= upVolume
-          this.strictSums[stepIndex][1] -= downVolume
-
-          if (this.counters[stepIndex + 1]) {
-            this.counters[stepIndex + 1].push(...expired)
-            this.strictSums[stepIndex + 1][0] += upVolume
-            this.strictSums[stepIndex + 1][1] += downVolume
-
-            if (this.completed < stepIndex) {
-              this.completed = stepIndex
-            }
-          }
-        }
-
-        if (!this.cumulativeCounters) {
-          stackedUpVolume = 0
-          stackedDownVolume = 0
-        }
-
-        stackedUpVolume += this.strictSums[stepIndex][0]
-        stackedDownVolume += this.strictSums[stepIndex][1]
-
-        this.$set(this.stackedSums[stepIndex], 0, parseFloat(stackedUpVolume))
-        this.$set(this.stackedSums[stepIndex], 1, parseFloat(stackedDownVolume))
-
-        stepIndex++
-      }
-    },
-    stackTrades(trades) {
-      const now = +new Date()
-      const minTimestampForCounter = this.countersSteps[
-        this.countersSteps.length - 1
-      ]
-
-      let stacks = []
-
-      for (let trade of trades) {
-        if (
-          this.actives.indexOf(trade[0]) === -1 ||
-          trade[1] < now - minTimestampForCounter
-        ) {
-          continue
-        }
-
-        const isBuy = +trade[4] > 0 ? true : false
-
-        if (
-          stacks.length &&
-          trade[1] - stacks[stacks.length - 1][0] < this.counterPrecision
-        ) {
-          stacks[stacks.length - 1][isBuy ? 1 : 2] += +trade[3]
-        } else {
-          stacks.push([
-            +trade[1],
-            isBuy ? +trade[3] : 0,
-            !isBuy ? +trade[3] : 0,
-          ])
-        }
-      }
-
-      return stacks
-    },
-    populateCounters(stacks) {
-      if (!stacks || !stacks.length) {
-        return
-      }
-
-      const now = +new Date()
-
-      let last = 0
-
-      for (let stack of stacks) {
-        for (let index = 0; index < this.countersSteps.length; index++) {
-          if (stack[0] > now - this.countersSteps[index]) {
-            this.counters[index].push(stack)
-            this.strictSums[index][0] += stack[1]
-            this.strictSums[index][1] += stack[2]
-
-            break
-          }
-        }
-      }
-
-      let stackedUpVolume = 0
-      let stackedDownVolume = 0
-      let completed = 0
-
-      for (let index = 0; index < this.countersSteps.length; index++) {
-        this.counters[index] = this.counters[index].sort((a, b) => a[0] - b[0])
-
-        if (!this.cumulativeCounters) {
-          stackedUpVolume = 0
-          stackedDownVolume = 0
-        }
-
-        stackedUpVolume += this.strictSums[index][0]
-        stackedDownVolume += this.strictSums[index][1]
-
-        this.$set(this.stackedSums[index], 0, parseFloat(stackedUpVolume))
-        this.$set(this.stackedSums[index], 1, parseFloat(stackedDownVolume))
-
-        if (stacks[0][0] < now - this.countersSteps[index] * 0.99) {
-          completed = index
-        }
-      }
-
-      this.completed = completed
-    },
-    updateCounterStep(index, value) {
-      if (!value) {
-        return this.$store.commit('setCounterStep', {
-          index: index,
-          value: null,
+        COUNTERS.push({
+          duration: step,
+          chunks: []
         })
       }
 
-      let milliseconds = parseFloat(value)
+      for (let counter of COUNTERS) {
+        const first = COUNTERS.indexOf(counter) === 0
 
-      if (isNaN(milliseconds)) {
-        return false
+        this.steps.push({
+          duration: getHms(counter.duration),
+          buy: 0,
+          sell: 0,
+          hasData: first
+        })
       }
 
-      if (/[\d.]+s/.test(value)) {
-        milliseconds *= 1000
-      } else if (/[\d.]+h/.test(value)) {
-        milliseconds *= 1000 * 60 * 60
-      } else {
-        milliseconds *= 1000 * 60
-      }
-
-      return this.$store.commit('setCounterStep', {
-        index: index,
-        value: milliseconds,
+      setTimeout(() => {
+        const counterElement = this.$el.querySelector('.counter:first-child')
+        this.topElement.buy = counterElement.children[0]
+        this.topElement.sell = counterElement.children[1]
       })
     },
-    rebuildCounters() {
-      clearInterval(this.countersRefreshCycleInterval)
-
+    populateCounters() {
       const now = +new Date()
 
-      this.completed = 0
-      this.labels.splice(0, this.labels.length)
-      this.counters.splice(0, this.counters.length)
-      this.strictSums.splice(0, this.strictSums.length)
-      this.stackedSums.splice(0, this.stackedSums.length)
+      if (CHUNK.timestamp) {
+        COUNTERS[0].chunks.push({
+          timestamp: CHUNK.timestamp,
+          buy: CHUNK.buy,
+          sell: CHUNK.sell
+        })
 
-      for (let i = 0; i < this.countersSteps.length; i++) {
-        this.labels.push(this.$root.ago(now - this.countersSteps[i]))
-        this.counters.push([])
-        this.strictSums.push([0, 0])
-        this.stackedSums.push([0, 0])
+        CHUNK.timestamp = null
+        CHUNK.buy = 0
+        CHUNK.sell = 0
       }
 
-      const trades = this.getTicksTrades()
-      const stacks = this.stackTrades(trades)
+      let chunksToDecrease = []
+      let downgradeBuy
+      let downgradeSell
 
-      this.populateCounters(stacks)
+      for (let i = 0; i < COUNTERS.length; i++) {
+        if (chunksToDecrease.length) {
+          Array.prototype.push.apply(COUNTERS[i].chunks, chunksToDecrease.splice(0, chunksToDecrease.length))
 
-      console.log(
-        `[counters.rebuild]\n`,
-        this.counters
-          .map(
-            (a, index) =>
-              `\t- Counter ${this.labels[index]} got ${a.length} stacks`
-          )
-          .join('\n')
-      )
+          if (!this.steps[i].hasData) {
+            this.steps[i].hasData = true
+          }
+        }
 
-      this.countersRefreshCycleInterval = window.setInterval(
-        this.updateCounters.bind(this),
-        this.counterPrecision
-      )
-    },
-    deleteCounter(index) {
-      if (this.countersSteps.length === 1) {
-        this.$store.commit('toggleCounters', false)
+        downgradeBuy = 0
+        downgradeSell = 0
 
-        return
+        let to = 0
+
+        for (let j = 0; j < COUNTERS[i].chunks.length; j++) {
+          downgradeBuy += COUNTERS[i].chunks[j].buy
+          downgradeSell += COUNTERS[i].chunks[j].sell
+          if (COUNTERS[i].chunks[j].timestamp >= now - COUNTERS[i].duration) {
+            to = j
+            break
+          }
+        }
+
+        if (to) {
+          chunksToDecrease = COUNTERS[i].chunks.splice(0, to + 1)
+          if (isNaN(this.steps[i].buy - downgradeBuy) || isNaN(this.steps[i].sell - downgradeSell)) debugger
+          this.steps[i].buy -= downgradeBuy
+          this.steps[i].sell -= downgradeSell
+        }
       }
-
-      this.$store.commit('setCounterStep', { index: index, value: null })
-    },
-    getTicksTrades() {
-      return socket.ticks
-        .reduce((prev, curr) => {
-          const ratio = {
-            buys: curr.buys / (curr.sells + curr.buys),
-            sells: curr.sells / (curr.sells + curr.buys),
-          }
-
-          if (curr.buys > 0) {
-            prev.push([
-              curr.exchange,
-              curr.timestamp,
-              curr.close,
-              ratio.buys * curr.volume,
-              true,
-              ratio.buys * curr.records,
-            ])
-          }
-
-          if (curr.sells > 0) {
-            prev.push([
-              curr.exchange,
-              curr.timestamp,
-              curr.close,
-              ratio.sells * curr.volume,
-              false,
-              ratio.sells * curr.records,
-            ])
-          }
-
-          return prev
-        }, [])
-        .concat(socket.trades)
-    },
+    }
   },
+  getCountersRange() {
+    const now = +new Date()
+    return {
+      from: now - this.countersSteps[this.countersSteps.length - 1],
+      to: now
+    }
+  },
+  getFirstPoint() {
+    for (let i = COUNTERS.length - 1; i >= 0; i--) {
+      for (let j = COUNTERS[i].chunks.length - 1; j >= 0; j--) {
+        return COUNTERS[i].chunks[j].timestamp
+      }
+    }
+
+    return null
+  }
 }
 </script>
 
 <style lang="scss">
-@import '../assets/sass/variables';
-
-.counters__add {
-  background-color: rgba(white, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 2em;
-  font-size: 0.8em;
-  cursor: pointer;
-
-  transition: background-color 0.2s $easeOutExpo;
-
-  i.icon-add {
-    margin-right: 0.5em;
-  }
-
-  &:hover {
-    background-color: $blue;
-  }
-}
-
 .counters {
-  ul {
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-flow: column nowrap;
-
-    li {
-      display: flex;
-      flex-flow: row nowrap;
-      position: relative;
-      align-items: stretch;
-    }
-  }
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
 }
 
-.counters__item {
-  > div {
-    padding: 0.25em;
+.counter {
+  display: flex;
+  position: relative;
+
+  &:before {
+    content: attr(duration);
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 0.55em;
+    background-color: rgba(black, 0.1);
+    border-radius: 2px;
+    padding: 0.34em 0.4em;
+    font-size: 0.85em;
+    text-align: center;
+    pointer-events: none;
+    line-height: 1;
+    color: rgba(white, 0.75);
+    font-family: monospace;
   }
 
-  &:hover {
-    .counter__delete {
-      flex-basis: 2.35em;
+  .highlight {
+    position: absolute;
+    top: -0.2em;
+    animation: fly-high 2s $easeInExpo;
+    opacity: 0;
+    padding: 0.3em 0.4em;
+    box-shadow: 0 1px 1px rgba(black, 0.5);
+    box-shadow: 0 1px 16px rgba(black, 0.1);
+    z-index: 10;
+    font-size: 0.5em;
+    font-weight: 600;
+    font-family: 'Roboto Condensed';
 
-      &:before {
-        transform: none;
+    @keyframes fly-high {
+      0% {
         opacity: 1;
+        transform: translateY(-10%);
+      }
+      75% {
+        opacity: 0.75;
+      }
+      100% {
+        transform: translateY(-2em);
+        opacity: 0;
       }
     }
   }
 
-  .counter__delete {
-    color: white;
-    background-color: rgba(black, 0.8);
-    transition: flex-basis 0.2s $easeOutExpo;
-    font-size: 0.8em;
-    flex-basis: 0px;
-    padding: 0;
+  &__side {
     display: flex;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    overflow: hidden;
-    cursor: pointer;
+    flex-grow: 1;
 
-    &:before {
-      display: inline-block;
-      transform: rotateZ(45deg);
-      opacity: 0;
-      transition: all 0.2s $easeOutExpo;
+    span {
+      position: relative;
+      padding: 0.5em;
+      font-size: 0.9em;
+      display: block;
+    }
+
+    &.-buy {
+      background-color: $green;
+
+      .highlight {
+        background-color: lighten($green, 10%);
+
+        left: 0.5em;
+      }
+    }
+
+    &.-sell {
+      background-color: $red;
+      justify-content: flex-end;
+
+      .highlight {
+        background-color: lighten($red, 10%);
+
+        right: 0.5em;
+      }
     }
   }
 }
 
-.counter__index {
-  flex-basis: 2.5em;
-  white-space: nowrap;
-  text-align: left;
-  flex-shrink: 0;
-  transition: padding 0.2s $easeOutExpo;
-  position: relative;
-  color: white;
-  background-color: rgba(black, 0.2);
+$num: 0;
 
-  [contenteditable] {
-    padding: 4px;
-    font-size: 0.8em;
-  }
-}
-
-.counter__up,
-.counter__down {
-  position: relative;
-  font-family: monospace;
-  transition: flex-basis 0.4s $easeOutExpo;
-
-  flex-basis: 50%;
-
-  &:before {
-    content: attr(data-amount);
-    position: absolute;
-    margin: 0 0.2em;
-    line-height: 1.75em;
-    z-index: 1;
-  }
-}
-
-.counter__light {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  opacity: 0;
-  width: 2em;
-
-  &.-highlight {
-    animation: highlight 0.5s $easeOutExpo;
-  }
-}
-
-.counter__up {
-  text-align: left;
-  background-color: desaturate($green, 5);
-  color: white;
-
-  .counter__light {
-    right: 0;
+@while $num < 10 {
+  .counter:nth-child(#{$num}) .counter__side.-buy {
+    background-color: desaturate(darken($green, if($num % 2 == 0, 1 * $num, 0.5 * $num)), $num);
   }
 
-  &:before {
-    left: 0.25em;
-  }
-}
-
-.counter__down {
-  text-align: right;
-  background-color: $red;
-  color: white;
-
-  .counter__light {
-    left: 0;
+  .counter:nth-child(#{$num}) .counter__side.-sell {
+    background-color: desaturate(darken($red, if($num % 2 == 0, 1 * $num, 0.5 * $num)), $num);
   }
 
-  &:before {
-    right: 0.25em;
-  }
+  $num: $num + 1;
 }
 </style>

@@ -6,7 +6,7 @@ class Bybit extends Exchange {
 
     this.id = 'bybit'
 
-    this.pairs = ['BTCUSD', 'ETHUSD', 'EOSUSD', 'XRPUSD']
+    this.products = ['BTCUSD', 'ETHUSD', 'EOSUSD', 'XRPUSD']
 
     this.endpoints = {
       // PRODUCTS: 'not available yet'
@@ -16,46 +16,55 @@ class Bybit extends Exchange {
       {
         url: () => {
           return `wss://stream.bybit.com/realtime`
-        },
+        }
       },
       this.options
     )
+
+    this.initialize()
   }
 
   connect() {
-    if (!super.connect()) return
+    const validation = super.connect()
+    if (!validation) return Promise.reject()
+    else if (validation instanceof Promise) return validation
 
-    this.api = new WebSocket(this.getUrl())
+    return new Promise((resolve, reject) => {
+      this.api = new WebSocket(this.getUrl())
 
-    this.api.onmessage = (event) =>
-      this.emitTrades(this.formatLiveTrades(JSON.parse(event.data)))
+      this.api.onmessage = event => this.queueTrades(this.formatLiveTrades(JSON.parse(event.data)))
 
-    this.api.onopen = (event) => {
-      this.skip = true
+      this.api.onopen = () => {
+        this.skip = true
 
-      this.api.send(
-        JSON.stringify({
-          op: 'subscribe',
-          args: ['trade'],
-        })
-      )
+        this.api.send(
+          JSON.stringify({
+            op: 'subscribe',
+            args: ['trade']
+          })
+        )
 
-      /* this.keepalive = setInterval(() => {
-                this.api.send(JSON.stringify({
-                    op: 'ping',
-                }));
-            }, 60000); */
+        /* this.keepalive = setInterval(() => {
+                  this.api.send(JSON.stringify({
+                      op: 'ping',
+                  }));
+              }, 60000); */
 
-      this.emitOpen(event)
-    }
+        this.emitOpen(event)
 
-    this.api.onclose = (event) => {
-      this.emitClose(event)
+        resolve()
+      }
 
-      clearInterval(this.keepalive)
-    }
+      this.api.onclose = event => {
+        this.emitClose(event)
+      }
 
-    this.api.onerror = this.emitError.bind(this, { message: 'Websocket error' })
+      this.api.onerror = () => {
+        this.emitError({ message: `${this.id} disconnected` })
+
+        reject()
+      }
+    })
   }
 
   disconnect() {
@@ -67,32 +76,24 @@ class Bybit extends Exchange {
   }
 
   formatLiveTrades(json) {
-    if (
-      !json.data ||
-      json.topic !== 'trade.' + this.pair ||
-      !json.data.length
-    ) {
+    if (!json.data || json.topic !== 'trade.' + this.pair || !json.data.length) {
       return
     }
 
-    return json.data.map((trade) => {
-      return [
-        this.id,
-        +new Date(trade.timestamp),
-        +trade.price,
-        trade.size / trade.price,
-        trade.side === 'Buy' ? 1 : 0,
-      ]
+    return json.data.map(trade => {
+      return {
+        exchange: this.id,
+        timestamp: +new Date(trade.timestamp),
+        price: +trade.price,
+        size: trade.size / trade.price,
+        side: trade.side === 'Buy' ? 'buy' : 'sell'
+      }
     })
   }
 
   formatProducts(data) {
     return data.result.reduce((output, product) => {
-      output[
-        product.settlement === 'perpetual'
-          ? product.baseCurrency + product.currency
-          : product.instrumentName
-      ] = product.instrumentName
+      output[product.settlement === 'perpetual' ? product.baseCurrency + product.currency : product.instrumentName] = product.instrumentName
       return output
     }, {})
   }

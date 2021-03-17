@@ -7,57 +7,67 @@ class Deribit extends Exchange {
     this.id = 'deribit'
 
     this.endpoints = {
-      PRODUCTS: 'https://www.deribit.com/api/v1/public/getinstruments',
+      PRODUCTS: 'https://www.deribit.com/api/v1/public/getinstruments'
     }
 
     this.options = Object.assign(
       {
         url: () => {
           return `wss://www.deribit.com/ws/api/v2`
-        },
+        }
       },
       this.options
     )
+
+    this.initialize()
   }
 
   connect() {
-    if (!super.connect()) return
+    const validation = super.connect()
+    if (!validation) return Promise.reject()
+    else if (validation instanceof Promise) return validation
 
-    this.api = new WebSocket(this.getUrl())
+    return new Promise((resolve, reject) => {
+      this.api = new WebSocket(this.getUrl())
 
-    this.api.onmessage = (event) =>
-      this.emitTrades(this.formatLiveTrades(JSON.parse(event.data)))
+      this.api.onmessage = event => this.queueTrades(this.formatLiveTrades(JSON.parse(event.data)))
 
-    this.api.onopen = (event) => {
-      this.skip = true
+      this.api.onopen = e => {
+        this.skip = true
 
-      this.api.send(
-        JSON.stringify({
-          method: 'public/subscribe',
-          params: {
-            channels: ['trades.' + this.pair + '.raw'],
-          },
-        })
-      )
-
-      this.keepalive = setInterval(() => {
         this.api.send(
           JSON.stringify({
-            method: 'public/ping',
+            method: 'public/subscribe',
+            params: {
+              channels: ['trades.' + this.pair + '.raw']
+            }
           })
         )
-      }, 60000)
 
-      this.emitOpen(event)
-    }
+        this.keepalive = setInterval(() => {
+          this.api.send(
+            JSON.stringify({
+              method: 'public/ping'
+            })
+          )
+        }, 60000)
 
-    this.api.onclose = (event) => {
-      this.emitClose(event)
+        this.emitOpen(e)
 
-      clearInterval(this.keepalive)
-    }
+        resolve()
+      }
 
-    this.api.onerror = this.emitError.bind(this, { message: 'Websocket error' })
+      this.api.onclose = event => {
+        this.emitClose(event)
+
+        clearInterval(this.keepalive)
+      }
+      this.api.onerror = () => {
+        this.emitError({ message: `${this.id} disconnected` })
+
+        reject()
+      }
+    })
   }
 
   disconnect() {
@@ -73,24 +83,26 @@ class Deribit extends Exchange {
       return
     }
 
-    return json.params.data.map((trade) => {
-      return [
-        this.id,
-        +trade.timestamp,
-        +trade.price,
-        trade.amount / trade.price,
-        trade.direction === 'buy' ? 1 : 0,
-      ]
+    return json.params.data.map(a => {
+      const trade = {
+        exchange: this.id,
+        timestamp: +a.timestamp,
+        price: +a.price,
+        size: a.amount / a.price,
+        side: a.direction
+      }
+
+      if (a.liquidation) {
+        trade.liquidation = true
+      }
+
+      return trade
     })
   }
 
   formatProducts(data) {
     return data.result.reduce((output, product) => {
-      output[
-        product.settlement === 'perpetual'
-          ? product.baseCurrency + product.currency
-          : product.instrumentName
-      ] = product.instrumentName
+      output[product.settlement === 'perpetual' ? product.baseCurrency + product.currency : product.instrumentName] = product.instrumentName
       return output
     }, {})
   }

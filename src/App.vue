@@ -1,206 +1,206 @@
 <template>
   <div
     id="app"
-    :data-currency="currency"
-    :data-commodity="commodity"
+    :data-prefer="preferQuoteCurrencySize ? 'quote' : 'base'"
+    :data-base="baseCurrency"
+    :data-quote="quoteCurrency"
     :data-symbol="symbol"
     :data-pair="pair"
     :class="{
-      loading: isLoading,
+      loading: isLoading
     }"
   >
+    <div class="notices">
+      <Notice v-for="(notice, index) in notices" :key="index" :notice="notice" />
+    </div>
     <Settings v-if="showSettings" @close="showSettings = false" />
     <div class="app__wrapper">
-      <Alerts />
+      <div
+        v-if="showSearch"
+        ref="searchWrapper"
+        class="app__search"
+        @click="$event.target === $refs.searchWrapper && $store.commit('app/TOGGLE_SEARCH', false)"
+      >
+        <Autocomplete
+          :load="search"
+          :selected="pairs"
+          @submit="$store.commit('settings/SET_PAIR', $event.join('+')), $store.commit('app/TOGGLE_SEARCH', false)"
+          v-slot="{ item }"
+        >
+          <span
+            >{{ item.value }}
+            <div class="badge">{{ item.exchanges.join(', ') }}</div></span
+          >
+        </Autocomplete>
+      </div>
       <Header :price="price" @toggleSettings="showSettings = !showSettings" />
       <div class="app__layout">
-        <div class="app__left" v-if="showChart">
-          <Chart />
-          <Exchanges />
+        <div class="app__left">
+          <Chart v-if="showChart" />
+          <Exchanges v-if="showChart && showExchangesBar" />
         </div>
         <div class="app__right">
-          <Stats v-if="showStats" />
           <Counters v-if="showCounters" />
+          <Stats v-if="showStats" />
           <TradeList />
         </div>
       </div>
     </div>
+    <dialogs-wrapper></dialogs-wrapper>
   </div>
 </template>
 
 <script>
 import { mapState } from 'vuex'
+import { formatPrice, formatAmount, movingAverage, countDecimals } from './utils/helpers'
 
 import socket from './services/socket'
-import touchevent from './utils/touchevent'
 
-import Alerts from './components/Alerts.vue'
-import Header from './components/Header.vue'
+import Notice from './components/ui/Notice.vue'
+import Header from './components/ui/Header.vue'
+import Autocomplete from './components/ui/Autocomplete.vue'
 import Settings from './components/Settings.vue'
 import TradeList from './components/TradeList.vue'
 import Chart from './components/chart/Chart.vue'
 import Counters from './components/Counters.vue'
 import Stats from './components/Stats.vue'
 import Exchanges from './components/Exchanges.vue'
+import upFavicon from '../src/assets/up.png'
+import downFavicon from '../src/assets/down.png'
+
+const faviconDirection = {
+  direction: null,
+  index: 0,
+  avg: 0
+}
+
+let searchLetter
 
 export default {
   components: {
-    Alerts,
     Header,
     Settings,
     TradeList,
     Chart,
     Counters,
+    Notice,
     Stats,
     Exchanges,
+    Autocomplete
   },
   name: 'app',
   data() {
     return {
       price: null,
-      currency: 'dollar',
-      commodity: 'bitcoin',
+      baseCurrency: 'bitcoin',
+      quoteCurrency: 'dollar',
       symbol: '$',
 
       showSettings: false,
-      showStatistics: false,
+      showStatistics: false
     }
   },
   computed: {
-    ...mapState([
-      'pair',
-      'actives',
-      'showCounters',
-      'showStats',
-      'showChart',
-      'decimalPrecision',
-      'autoClearTrades',
-      'isLoading',
-      'preferBaseCurrencySize',
-    ]),
+    ...mapState('app', ['isLoading', 'actives', 'notices', 'showSearch', 'pairs']),
+    ...mapState('settings', ['pair', 'showChart', 'showCounters', 'showStats', 'decimalPrecision', 'preferQuoteCurrencySize', 'showExchangesBar'])
   },
   created() {
-    this.$root.isAggrTrade = /aggr.trade$/.test(window.location.hostname)
-    this.$root.isTouchSupported = touchevent()
-    this.$root.applicationStartTime = +new Date()
-    this.$root.formatPrice = this.formatPrice.bind(this)
-    this.$root.formatAmount = this.formatAmount.bind(this)
-    this.$root.padNumber = this.padNumber.bind(this)
-    this.$root.ago = this.ago.bind(this)
+    this.$root.formatPrice = formatPrice
+    this.$root.formatAmount = formatAmount
 
-    socket.$on('pairing', (value) => {
-      this.updatePairCurrency(this.pair)
-    })
+    if (this.decimalPrecision === null) {
+      this.calculateOptimalPrice = true
+    }
 
-    this.onStoreMutation = this.$store.subscribe((mutation, state) => {
+    this.onStoreMutation = this.$store.subscribe(mutation => {
       switch (mutation.type) {
-        case 'toggleAutoClearTrades':
-          this.toggleAutoClearTrades(mutation.payload)
-          break
-        case 'setPair':
+        case 'settings/SET_PAIR':
+          this.updatePairCurrency(mutation.payload)
           socket.connectExchanges(mutation.payload)
+          this.calculateOptimalPrice = true
+          break
+        case 'app/TOGGLE_SEARCH':
+          if (mutation.payload) {
+            setTimeout(() => {
+              const input = this.$refs.searchWrapper.querySelector('.autocomplete__input')
+
+              if (searchLetter) {
+                input.innerText = searchLetter
+                searchLetter = null
+              }
+            })
+
+            this.bindSearchClickOutside()
+          } else {
+            this.unbindSearchClickOutside()
+          }
           break
       }
     })
 
-    this.toggleAutoClearTrades(this.autoClearTrades)
-
     // Is request blocked by browser ?
-    // If true notice user that most of the exchanges may be unavailable
-    fetch('showads.js')
+    // If true notice user that some of the exchanges may be unavailable
+    /*fetch('showads.js')
       .then(() => {})
       .catch((response, a) => {
         socket.$emit('alert', {
           type: 'error',
           title: `Disable your AdBlocker`,
           message: `Some adblockers may block access to exchanges api.\nMake sure to turn it off, you wont find any ads here ever :-)`,
-          id: `adblock_error`,
+          id: `adblock_error`
         })
-      })
+      })*/
 
     socket.initialize()
 
     this.updatePrice()
+    this.updatePairCurrency(this.pair)
   },
-  mounted() {},
+  mounted() {
+    this.bindSearchOpenByKey()
+  },
   beforeDestroy() {
+    this.unbindSearchOpenByKey()
     clearTimeout(this._updatePriceTimeout)
 
     this.onStoreMutation()
   },
   methods: {
-    padNumber(num, size) {
-      var s = '000000000' + num
-      return s.substr(s.length - size)
+    search(query) {
+      return Object.values(this.$store.state.app.indexedProducts).filter(a => new RegExp(query, 'i').test(a.value))
     },
-    formatAmount(amount, decimals) {
-      if (amount >= 1000000) {
-        amount =
-          +(amount / 1000000).toFixed(isNaN(decimals) ? 1 : decimals) + 'M'
-      } else if (amount >= 1000) {
-        amount = +(amount / 1000).toFixed(isNaN(decimals) ? 1 : decimals) + 'K'
-      } else {
-        amount = this.$root.formatPrice(amount, decimals, false)
-      }
+    bindSearchOpenByKey() {
+      this._autocompleteHandler = (event => {
+        if (
+          this.showSearch ||
+          document.activeElement.tagName === 'INPUT' ||
+          document.activeElement.tagName === 'SELECT' ||
+          document.activeElement.isContentEditable
+        ) {
+          return
+        }
 
-      return amount
+        event = event || window.event
+        const charCode = event.which || event.keyCode
+        const charStr = String.fromCharCode(charCode)
+
+        if (/[a-z0-9]/i.test(charStr)) {
+          searchLetter = charStr
+          this.$store.commit('app/TOGGLE_SEARCH', true)
+        }
+      }).bind(this)
+
+      document.addEventListener('keypress', this._autocompleteHandler)
     },
-    formatPrice(price, decimals, sats = true) {
-      price = +price
-
-      if (isNaN(price) || !price) {
-        return (0).toFixed(decimals)
+    unbindSearchOpenByKey() {
+      if (this._autocompleteHandler) {
+        document.removeEventListener('keypress', this._autocompleteHandler)
+        delete this._autocompleteHandler
       }
-
-      if (!isNaN(decimals)) {
-        return +price.toFixed(decimals)
-      }
-
-      if (
-        sats &&
-        ((price <= 0.001 && /BTC$/.test(this.pair)) || price <= 0.0001)
-      ) {
-        return (
-          (price * 100000000).toFixed() +
-          ' <small class="condensed">sats</small>'
-        )
-      } else if (price >= 1000) {
-        return +price.toFixed(2)
-      }
-
-      if (this.decimalPrecision) {
-        return +price.toFixed(this.decimalPrecision)
-      }
-
-      const firstDigitIndex = price.toString().match(/[1-9]/)
-
-      if (firstDigitIndex) {
-        return +price.toFixed(
-          Math.max(8 - price.toFixed().length, firstDigitIndex.index + 1)
-        )
-      }
-
-      return +price.toFixed(8 - price.toFixed().length)
-    },
-    ago(timestamp) {
-      const seconds = Math.floor((new Date() - timestamp) / 1000)
-      let interval, output
-
-      if ((interval = Math.floor(seconds / 31536000)) > 1)
-        output = interval + 'y'
-      else if ((interval = Math.floor(seconds / 2592000)) >= 1)
-        output = interval + 'm'
-      else if ((interval = Math.floor(seconds / 86400)) >= 1)
-        output = interval + 'd'
-      else if ((interval = Math.floor(seconds / 3600)) >= 1)
-        output = interval + 'h'
-      else if ((interval = Math.floor(seconds / 60)) >= 1)
-        output = interval + 'm'
-      else output = Math.ceil(seconds) + 's'
-
-      return output
     },
     updatePairCurrency(pair) {
+      const name = pair.replace(/-[\w\d]*$/, '')
+
       const symbols = {
         BTC: ['bitcoin', '฿'],
         GBP: ['pound', '£'],
@@ -215,52 +215,50 @@ export default {
         IOTA: ['iota', 'IOTA'],
         XMR: ['xmr', 'XMR'],
         NEO: ['neo', 'NEO'],
-        EOS: ['eos', 'EOS'],
+        EOS: ['eos', 'EOS']
       }
 
-      this.currency = 'dollar'
-      this.commodity = 'coin'
+      this.baseCurrency = 'coin'
+      this.quoteCurrency = 'dollar'
       this.symbol = '$'
 
       for (let symbol of Object.keys(symbols)) {
-        if (new RegExp(symbol + '$').test(pair)) {
-          this.currency = symbols[symbol][0]
+        if (new RegExp(symbol + '$').test(name)) {
+          this.quoteCurrency = symbols[symbol][0]
           this.symbol = symbols[symbol][1]
         }
 
-        if (new RegExp('^' + symbol).test(pair)) {
-          this.commodity = symbols[symbol][0]
+        if (new RegExp('^' + symbol).test(name)) {
+          this.baseCurrency = symbols[symbol][0]
         }
       }
 
-      if (/^(?!XBT|BTC).*\d+$/.test(pair)) {
-        this.currency = symbols.BTC[0]
+      if (/^(?!XBT|BTC).*\d+$/.test(name)) {
+        this.quoteCurrency = symbols.BTC[0]
         this.symbol = symbols.BTC[1]
       }
-
-      this.$store.commit('toggleBaseCurrencySize', this.currency === 'bitcoin')
-    },
-    toggleAutoClearTrades(isAutoWipeCacheEnabled) {
-      clearInterval(this._autoWipeCacheInterval)
-
-      if (!isAutoWipeCacheEnabled) {
-        return
-      }
-
-      this._autoWipeCacheInterval = setInterval(
-        socket.cleanOldData.bind(socket),
-        1000 * 60 * 5
-      )
     },
     updatePrice() {
       let price = 0
       let total = 0
+      let decimals = null
+
+      const activesExchangesLength = this.actives.length
+
+      if (this.calculateOptimalPrice) {
+        decimals = []
+      }
 
       for (let exchange of socket.exchanges) {
-        if (
-          exchange.price === null ||
-          this.actives.indexOf(exchange.id) === -1
-        ) {
+        if (exchange.price === null) {
+          continue
+        }
+
+        if (this.calculateOptimalPrice) {
+          decimals.push(countDecimals(exchange.price))
+        }
+
+        if (this.actives.indexOf(exchange.id) === -1) {
           continue
         }
 
@@ -268,46 +266,76 @@ export default {
         price += exchange.price
       }
 
-      price = price / total
+      if (total) {
+        price = price / total
 
-      this.price = this.$root.formatPrice(price)
+        if (this.calculateOptimalPrice && total >= activesExchangesLength / 2) {
+          const optimalDecimal = Math.round(decimals.reduce((a, b) => a + b, 0) / decimals.length)
+          this.$store.commit('app/SET_OPTIMAL_DECIMAL', optimalDecimal)
 
-      window.document.title = this.price
-        .toString()
-        .replace(/<\/?[^>]+(>|$)/g, '')
-
-      /* if (direction) {
-        let favicon = document.getElementById('favicon');
-
-        if (!favicon || favicon.getAttribute('direction') !== direction) {
-          if (favicon) {
-            document.head.removeChild(favicon);
-          }
-
-          favicon = document.createElement('link');
-          favicon.id = 'favicon';
-          favicon.rel = 'shortcut icon';
-          favicon.href = `static/${direction}.png`;
-
-          favicon.setAttribute('direction', direction);
-
-          document.head.appendChild(favicon);
+          delete this.calculateOptimalPrice
         }
-      } */
+      }
+
+      if (price) {
+        this.updateFavicon(price)
+      }
+
+      this.price = formatPrice(price)
+
+      window.document.title = this.pair + ' ' + this.price.toString().replace(/<\/?[^>]+(>|$)/g, '')
 
       this._updatePriceTimeout = setTimeout(this.updatePrice, 1000)
     },
-  },
+    updateFavicon(price) {
+      if (faviconDirection.index) {
+        faviconDirection.avg = movingAverage(faviconDirection.avg, price, 1 / (faviconDirection.index + 1))
+      } else {
+        faviconDirection.avg = price
+      }
+      faviconDirection.index++
+
+      const direction = price > faviconDirection.avg ? 'up' : 'down'
+
+      if (direction !== faviconDirection.direction) {
+        if (!faviconDirection.element) {
+          faviconDirection.element = document.createElement('link')
+          faviconDirection.element.id = 'favicon'
+          faviconDirection.element.rel = 'shortcut icon'
+
+          document.head.appendChild(faviconDirection.element)
+        }
+
+        if (direction === 'up') {
+          faviconDirection.element.href = upFavicon
+        } else {
+          faviconDirection.element.href = downFavicon
+        }
+      }
+    },
+    bindSearchClickOutside() {
+      if (this._clickSearchOutsideHandler) {
+        return
+      }
+
+      this._clickSearchOutsideHandler = (event => {
+        const element = this.$refs.searchWrapper.children[0]
+
+        if (element !== event.target && !element.contains(event.target)) {
+          this.$store.commit('app/TOGGLE_SEARCH', false)
+        }
+      }).bind(this)
+
+      document.addEventListener('mousedown', this._clickSearchOutsideHandler)
+    },
+    unbindSearchClickOutside() {
+      if (!this._clickSearchOutsideHandler) {
+        return
+      }
+
+      document.removeEventListener('mousedown', this._clickSearchOutsideHandler)
+      delete this._clickSearchOutsideHandler
+    }
+  }
 }
 </script>
-
-<style lang="scss">
-@import './assets/sass/variables';
-@import './assets/sass/helper';
-@import './assets/sass/layout';
-@import './assets/sass/icons';
-@import './assets/sass/currency';
-@import './assets/sass/tooltip';
-@import './assets/sass/dropdown';
-@import './assets/sass/button';
-</style>
